@@ -1,0 +1,9 @@
+Remove timescaledb from requirements.txt; it is actually the PostgreSQL extension, not a Python (PyPI) package.
+Summary:
+TimescaleDB = PostgreSQL extension (install separately)
+
+psycopg2-binary = Python connector to PostgreSQL/TimescaleDB
+
+Remove timescaledb from your Python requirements
+
+The psycopg2-binary package is what you'll use to connect to your TimescaleDB database from Python.

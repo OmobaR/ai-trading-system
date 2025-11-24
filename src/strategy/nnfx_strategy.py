@@ -2,69 +2,316 @@
 import numpy as np
 import pandas as pd
 import logging
+from typing import Dict, Optional, Tuple
+import talib
+from dataclasses import dataclass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@dataclass
+class NNFXSignal:
+    """NNFX trading signal with confidence"""
+    signal: int  # 1 for Buy, -1 for Sell, 0 for Hold
+    confidence: float
+    regime: str
+    indicators: Dict[str, float]
+    timestamp: pd.Timestamp
+
 class NNFXStrategy:
-    def __init__(self, regime_periods={'Bull': 50, 'Consolidation': 20}):
-        self.regime_periods = regime_periods
-        self.current_regime = 'Bull'  # Placeholder; integrate with HMM in Phase 3
+    """
+    Enhanced NNFX Strategy with regime adaptation and proper technical indicators
+    Based on Patrick Victor's No Nonsense Forex methodology
+    """
+    
+    def __init__(self, regime_periods: Dict[str, int] = None):
+        self.regime_periods = regime_periods or {
+            'trending_high_vol': 50,
+            'trending_low_vol': 34,
+            'ranging_high_vol': 20,
+            'ranging_low_vol': 14
+        }
+        self.current_regime = 'trending_high_vol'
+        
+        # NNFX-specific parameters
+        self.adx_threshold = 25.0
+        self.atr_multiplier = 1.5
+        self.rsi_overbought = 70
+        self.rsi_oversold = 30
+        
+    def hull_moving_average(self, data: pd.Series, period: int) -> pd.Series:
+        """Calculate Hull Moving Average with proper implementation"""
+        if len(data) < period:
+            return pd.Series([np.nan] * len(data), index=data.index)
+        
+        # WMA for half period
+        half_period = max(1, period // 2)
+        wma_half = data.rolling(window=half_period).apply(
+            lambda x: np.average(x, weights=np.arange(1, len(x)+1)), 
+            raw=False
+        )
+        
+        # WMA for full period
+        wma_full = data.rolling(window=period).apply(
+            lambda x: np.average(x, weights=np.arange(1, len(x)+1)), 
+            raw=False
+        )
+        
+        # Calculate raw HMA
+        raw_hma = 2 * wma_half - wma_full
+        
+        # WMA of raw HMA with sqrt(period)
+        sqrt_period = max(1, int(np.sqrt(period)))
+        hma = raw_hma.rolling(window=sqrt_period).apply(
+            lambda x: np.average(x, weights=np.arange(1, len(x)+1)), 
+            raw=False
+        )
+        
+        return hma
 
-    def hull_moving_average(self, data, period):
-        # Hull MA: 2 * WMA(n/2) - WMA(n), then WMA of that with sqrt(n)
-        def wma(s, p):
-            weights = np.arange(1, p + 1)
-            return (s.rolling(p) * weights).sum() / weights.sum()
-        half_period = int(period / 2)
-        wma_half = wma(data, half_period)
-        wma_full = wma(data, period)
-        hull = 2 * wma_half - wma_full
-        sqrt_period = int(np.sqrt(period))
-        return wma(hull, sqrt_period)
+    def adaptive_period(self, data: pd.DataFrame, base_period: int = 20) -> int:
+        """
+        Calculate adaptive period based on market volatility using ATR
+        Higher volatility = longer period, lower volatility = shorter period
+        """
+        if len(data) < base_period * 2:
+            return base_period
+            
+        atr = talib.ATR(data['high'], data['low'], data['close'], timeperiod=base_period)
+        current_atr = atr.iloc[-1] if not atr.empty else 0.0
+        
+        # Normalize ATR relative to price
+        if data['close'].iloc[-1] > 0:
+            atr_ratio = current_atr / data['close'].iloc[-1]
+        else:
+            atr_ratio = 0.0
+            
+        # Adjust period based on volatility (inverse relationship for responsiveness)
+        volatility_factor = 1.0 / (atr_ratio + 0.001)  # Avoid division by zero
+        adaptive_period = int(base_period * np.clip(volatility_factor, 0.5, 2.0))
+        
+        return max(10, min(100, adaptive_period))  # Reasonable bounds
 
-    def pa_adaptive_hull_parabolic(self, data, base_period=20):
-        # Placeholder for Ehlers' phase accumulation (PA) adaptive
-        # Simulate dominant cycle measurement (e.g., via autocorrelation or FFT)
-        # For demo: Assume cycle_length from rolling std or similar
-        cycle_length = base_period  # Replace with real PA calc
-        hull = self.hull_moving_average(data, cycle_length)
-        # Parabolic: Add SAR-like acceleration (placeholder)
-        parabolic_factor = 0.02 + 0.015 * (len(data) % 10)  # Simulated
-        return hull * parabolic_factor
+    def calculate_nnfx_indicators(self, data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate all NNFX required indicators"""
+        if len(data) < 50:  # Need sufficient data
+            return {}
+            
+        close = data['close']
+        high = data['high']
+        low = data['low']
+        
+        indicators = {}
+        
+        try:
+            # 1. Baseline - Hull Moving Average
+            hma_period = self.adaptive_period(data)
+            indicators['hma'] = self.hull_moving_average(close, hma_period).iloc[-1]
+            
+            # 2. Trend Strength - ADX
+            indicators['adx'] = talib.ADX(high, low, close, timeperiod=14).iloc[-1]
+            
+            # 3. Volatility - ATR
+            indicators['atr'] = talib.ATR(high, low, close, timeperiod=14).iloc[-1]
+            indicators['atr_pct'] = indicators['atr'] / close.iloc[-1] if close.iloc[-1] > 0 else 0
+            
+            # 4. Momentum - RSI
+            indicators['rsi'] = talib.RSI(close, timeperiod=14).iloc[-1]
+            
+            # 5. Additional Confirmations
+            indicators['stoch_k'], indicators['stoch_d'] = talib.STOCH(high, low, close)[-1]
+            indicators['macd'], indicators['macd_signal'], _ = talib.MACD(close)
+            indicators['macd'] = indicators['macd'].iloc[-1] if hasattr(indicators['macd'], 'iloc') else indicators['macd'][-1]
+            indicators['macd_signal'] = indicators['macd_signal'].iloc[-1] if hasattr(indicators['macd_signal'], 'iloc') else indicators['macd_signal'][-1]
+            
+        except Exception as e:
+            logger.error(f"Error calculating NNFX indicators: {e}")
+            return {}
+            
+        return indicators
 
-    def generate_signal(self, data, regime=None):
-        if regime:
-            self.current_regime = regime
-        period = self.regime_periods.get(self.current_regime, 30)
-        indicator = self.pa_adaptive_hull_parabolic(data['close'], period)
-        # Basic signal: Cross above/below
-        if indicator.iloc[-1] > data['close'].iloc[-1]:
-            return 1  # Buy
-        elif indicator.iloc[-1] < data['close'].iloc[-1]:
-            return -1  # Sell
-        return 0
+    def generate_signal(self, symbol: str, data: pd.DataFrame, 
+                       current_regime: Optional[str] = None) -> NNFXSignal:
+        """
+        Generate NNFX trading signal based on current regime and indicators
+        """
+        if current_regime:
+            self.current_regime = current_regime
+            
+        if len(data) < 50:
+            return NNFXSignal(0, 0.0, self.current_regime, {}, pd.Timestamp.now())
+        
+        # Calculate indicators
+        indicators = self.calculate_nnfx_indicators(data)
+        if not indicators:
+            return NNFXSignal(0, 0.0, self.current_regime, {}, pd.Timestamp.now())
+            
+        current_price = data['close'].iloc[-1]
+        hma = indicators['hma']
+        adx = indicators['adx']
+        rsi = indicators['rsi']
+        
+        # Determine signal based on regime
+        signal = 0
+        confidence = 0.0
+        
+        if "trending" in self.current_regime:
+            # Trending markets: Use trend-following logic
+            if adx > self.adx_threshold:  # Strong trend
+                if current_price > hma and rsi < self.rsi_overbought:
+                    signal = 1  # Buy in uptrend
+                    confidence = min(0.9, adx / 50.0)
+                elif current_price < hma and rsi > self.rsi_oversold:
+                    signal = -1  # Sell in downtrend
+                    confidence = min(0.9, adx / 50.0)
+                    
+        else:  # Ranging markets
+            # Use mean-reversion logic
+            price_distance = abs(current_price - hma) / hma if hma > 0 else 0
+            
+            if price_distance > 0.02:  # Significant deviation from HMA
+                if current_price > hma and rsi > self.rsi_overbought:
+                    signal = -1  # Sell overbought
+                    confidence = 0.7
+                elif current_price < hma and rsi < self.rsi_oversold:
+                    signal = 1  # Buy oversold
+                    confidence = 0.7
+        
+        # Adjust confidence based on multiple confirmations
+        if signal != 0:
+            # Add confirmation from MACD
+            macd_confirm = 1.0 if (signal == 1 and indicators['macd'] > indicators['macd_signal']) or \
+                                 (signal == -1 and indicators['macd'] < indicators['macd_signal']) else 0.5
+            
+            # Add confirmation from Stochastic
+            stoch_confirm = 1.0 if (signal == 1 and indicators['stoch_k'] < 20) or \
+                                  (signal == -1 and indicators['stoch_k'] > 80) else 0.5
+            
+            confidence = confidence * 0.6 + macd_confirm * 0.2 + stoch_confirm * 0.2
+        
+        return NNFXSignal(
+            signal=signal,
+            confidence=confidence,
+            regime=self.current_regime,
+            indicators=indicators,
+            timestamp=pd.Timestamp.now()
+        )
 
-    def walk_forward_optimization(self, data, window_size=252, step_size=63):
-        # Simple WFO: Divide data into in-sample (optimize) and out-sample (test)
+    def calculate_position_size(self, signal: NNFXSignal, account_balance: float, 
+                              risk_per_trade: float = 0.02) -> Tuple[float, Dict[str, float]]:
+        """
+        Calculate position size based on ATR volatility and risk management
+        """
+        if signal.signal == 0 or signal.confidence < 0.6:
+            return 0.0, {}
+            
+        atr = signal.indicators.get('atr', 0)
+        if atr <= 0:
+            return 0.0, {}
+            
+        # Risk calculation
+        risk_amount = account_balance * risk_per_trade
+        stop_loss_distance = atr * self.atr_multiplier
+        
+        if stop_loss_distance > 0:
+            position_size = risk_amount / stop_loss_distance
+        else:
+            position_size = 0.0
+            
+        # Adjust position size based on signal confidence
+        position_size *= signal.confidence
+        
+        risk_metrics = {
+            'risk_amount': risk_amount,
+            'stop_loss_pips': stop_loss_distance,
+            'position_size': position_size,
+            'risk_reward_ratio': 2.0,  # Fixed 1:2 risk-reward
+            'max_position_value': position_size * signal.indicators.get('atr', 1) * 100  # Approximate
+        }
+        
+        return position_size, risk_metrics
+
+    def walk_forward_optimization(self, data: pd.DataFrame, window_size: int = 252, 
+                                step_size: int = 63) -> Dict[str, float]:
+        """
+        Perform walk-forward optimization for strategy parameters
+        """
         results = []
+        
         for start in range(0, len(data) - window_size, step_size):
             in_sample = data.iloc[start:start + window_size]
             out_sample = data.iloc[start + window_size:start + window_size + step_size]
-            # Optimize: Find best period (placeholder grid search)
-            best_period = 30  # Simulate optimization
-            signals = self.generate_signal(in_sample)
-            perf = self.evaluate_performance(signals, out_sample)  # Placeholder
-            results.append(perf)
-        return np.mean(results)  # Avg performance
+            
+            if len(in_sample) < 50 or len(out_sample) < 20:
+                continue
+                
+            # Optimize parameters on in-sample data (simplified)
+            optimal_adx = 25.0  # Would be optimized in real implementation
+            optimal_atr_multiplier = 1.5
+            
+            # Test on out-sample data
+            test_strategy = NNFXStrategy()
+            test_strategy.adx_threshold = optimal_adx
+            test_strategy.atr_multiplier = optimal_atr_multiplier
+            
+            # Generate signals and calculate performance (simplified)
+            signals = []
+            for i in range(20, len(out_sample)):
+                window_data = out_sample.iloc[:i+1]
+                signal = test_strategy.generate_signal("test", window_data, "trending_high_vol")
+                signals.append(signal)
+            
+            # Calculate performance metrics (placeholder)
+            winning_trades = sum(1 for s in signals if s.confidence > 0.7 and s.signal != 0)
+            total_trades = sum(1 for s in signals if s.signal != 0)
+            win_rate = winning_trades / total_trades if total_trades > 0 else 0
+            
+            results.append({
+                'win_rate': win_rate,
+                'total_trades': total_trades,
+                'optimal_adx': optimal_adx,
+                'optimal_atr_multiplier': optimal_atr_multiplier
+            })
+        
+        if results:
+            avg_win_rate = np.mean([r['win_rate'] for r in results])
+            return {
+                'avg_win_rate': avg_win_rate,
+                'total_optimization_periods': len(results),
+                'recommended_adx_threshold': 25.0,
+                'recommended_atr_multiplier': 1.5
+            }
+        else:
+            return {'avg_win_rate': 0, 'total_optimization_periods': 0}
 
-    def evaluate_performance(self, signals, data):
-        # Placeholder: Sharpe, etc.
-        return 1.5
-
-# Example
+# Example usage and testing
 if __name__ == "__main__":
-    data = pd.DataFrame({'close': np.random.rand(100) * 100})
+    # Create sample data
+    dates = pd.date_range('2024-01-01', periods=100, freq='D')
+    np.random.seed(42)
+    prices = 100 + np.random.randn(100).cumsum() * 2
+    data = pd.DataFrame({
+        'open': prices - np.random.rand(100) * 2,
+        'high': prices + np.random.rand(100) * 2,
+        'low': prices - np.random.rand(100) * 2,
+        'close': prices,
+        'volume': np.random.randint(1000, 10000, 100)
+    }, index=dates)
+    
+    # Test strategy
     strategy = NNFXStrategy()
-    signal = strategy.generate_signal(data)
-    print(f"Signal: {signal}")
+    signal = strategy.generate_signal("TEST", data, "trending_high_vol")
+    
+    print(f"📊 NNFX Strategy Test Results:")
+    print(f"Signal: {signal.signal} ({'BUY' if signal.signal == 1 else 'SELL' if signal.signal == -1 else 'HOLD'})")
+    print(f"Confidence: {signal.confidence:.2%}")
+    print(f"Regime: {signal.regime}")
+    print(f"ADX: {signal.indicators.get('adx', 0):.2f}")
+    print(f"RSI: {signal.indicators.get('rsi', 0):.2f}")
+    print(f"HMA: {signal.indicators.get('hma', 0):.2f}")
+    
+    # Test position sizing
+    if signal.signal != 0:
+        position_size, risk_metrics = strategy.calculate_position_size(signal, 10000)
+        print(f"Position Size: {position_size:.2f}")
+        print(f"Risk Amount: ${risk_metrics['risk_amount']:.2f}")

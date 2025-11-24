@@ -1,37 +1,48 @@
-# docs/architecture/phase1.md
-# Phase 1 Documentation: Core Infrastructure
+# Phase 1 Documentation: Core Infrastructure & Data Pipeline
 
 ## Overview
-This phase implements the foundational data infrastructure, including an Event Sourcing-based audit trail, TimescaleDB for time-series storage, Redis for real-time features, and a Market Data Agent for ingestion.
+**Status: ✅ COMPLETED**  
+This phase implements the complete data infrastructure with real-time regime detection, TimescaleDB for time-series storage, Redis for real-time features, and a unified market data pipeline.
 
-## API Specifications
+## Current Implementation Status
+- ✅ **Market Data Agent** with MT5 integration (historical, live, simulate modes)
+- ✅ **Unified Regime Feature Store** with multiple detection models
+- ✅ **Event Sourcing** with TimescaleDB hypertables
+- ✅ **Real-time Feature Computation** with TA-Lib indicators
+- ✅ **Docker Development Environment** with full observability
+- ✅ **Comprehensive Testing Suite**
 
-### EventStore Class
-- `create_schema()`: Creates the events table and hypertable.
-- `append_event(event_type, aggregate_id, data, metadata=None, version=None)`: Appends an immutable event.
-- `get_events(aggregate_id=None, event_type=None, start_time=None, end_time=None)`: Retrieves events with filters.
-- `reconstruct_state(aggregate_id)`: Reconstructs aggregate state from events (extendable).
+## Core Components
 
-### FeatureStore Class
-- `set_feature(symbol, feature_name, value)`: Sets a feature using HSET.
-- `get_feature(symbol, feature_name)`: Gets a specific feature.
-- `get_all_features(symbol)`: Gets all features for a symbol.
+### UnifiedRegimeFeatureStore
+- Multiple regime detection models (basic, technical, NNFX, comprehensive)
+- ML-ready feature storage and export
+- Real-time regime analytics and tactical allocation
 
-### MarketDataAgent Class
-- `ingest_data(data)`: Validates, normalizes, stores, and computes features.
-- `run()`: Starts the ingestion loop (simulated).
-- `stop()`: Stops the agent gracefully.
+### MarketDataAgent  
+- MT5 integration for Weltrade synthetic indices (SyntX)
+- Real-time regime detection dashboard
+- Historical, live, and simulated data modes
 
-## Deployment Guide
-1. Install Docker and Docker Compose.
-2. Run `docker-compose up -d` to start Postgres and Redis.
-3. Apply `timescaledb_setup.sql` to Postgres.
-4. Build and run the agent: `docker-compose up market_data_agent`.
+### EventStore
+- TimescaleDB hypertables for efficient time-series storage
+- Regime event tracking with confidence scoring
+- Complete audit trail for all system events
 
-## Monitoring and Metrics
-- Logging: Structured logs via logging module.
-- Metrics: Extend with Prometheus client (future: add /metrics endpoint).
-- Health Checks: Add liveness probes in Docker (e.g., check DB/Redis ping).
+## Deployment
+```powershell
+# One-command setup
+.\scripts\setup_project.ps1
 
-## Test Suites
-See tests/ directory (example below).
+# Manual setup
+docker-compose -f docker/compose/docker-compose.dev.yml up -d
+python -m pytest tests/ -v
+Monitoring
+Grafana: http://localhost:3000
+
+Redis Commander: http://localhost:8081
+
+Real-time regime dashboard in MarketDataAgent
+
+Configuration
+See .env.example for environment variables

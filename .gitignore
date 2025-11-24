@@ -49,9 +49,11 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest_benchmark/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
 
 # IPython
 profile_default/
@@ -65,6 +67,9 @@ Pipfile.lock
 
 # PEP 582
 __pypackages__/
+
+# Poetry
+poetry.lock
 
 # Celery
 celerybeat-schedule
@@ -104,6 +109,7 @@ dmypy.json
 *.swp
 *.swo
 *~
+*.sublime-*
 
 # OS generated files
 .DS_Store
@@ -116,6 +122,7 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+.docker/
 
 # Database
 *.db
@@ -125,13 +132,16 @@ docker-compose.override.yml
 # TimescaleDB/PostgreSQL backups
 *.dump
 *.backup
+pgdata/
 
 # Redis
 dump.rdb
+appendonly.aof
 
 # Logs
 *.log
 logs/
+mlruns/  # MLflow
 
 # Airflow
 airflow.cfg
@@ -151,6 +161,9 @@ zookeeper-data/
 *.joblib
 *.h5
 *.model
+models/
+checkpoints/
+wandb/
 
 # Project specific
 config/secrets.yaml
@@ -161,13 +174,154 @@ config/secrets.yaml
 # Temporary files
 tmp/
 temp/
+.cache/
 
 # Data files (uncomment if you don't want to version control sample data)
-# data/raw/
-# data/processed/
-# data/external/
+data/raw/
+data/processed/
+data/external/
+*.csv
+*.parquet
+*.feather
+*.hdf5
+*.arrow
 
 # MT5 files
 *.chk
 *.dat
 *.hst
+*.ex5
+*.mq5
+
+# Trading specific
+backtest_results/
+portfolio_values/
+performance_metrics/
+
+# AI Trading System specific
+# ===========================
+# Feature store cache
+feature_cache/
+
+# Model serving
+model_registry/
+
+# Monitoring data
+prometheus_data/
+grafana_data/
+
+# Configuration overrides
+config/local/
+config/development/
+
+# API keys and credentials
+*.env*
+!.env.example
+
+# Large datasets
+*.zip
+*.tar.gz
+*.7z
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# System specific
+*.pid
+*.seed
+*.pid.lock
+
+# Certificate files
+*.csr
+*.der
+*.crt
+*.key
+*.p12
+*.pfx
+*.pem
+
+# IDE
+*.sln
+*.suo
+*.user
+*.vscode
+
+# Windows
+*.lnk
+
+# macOS
+*.DS_Store?
+
+# Linux
+*~
+
+# Virtual environment
+venv/
+ENV/
+
+# Sphinx documentation
+docs/_build/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# Jupyter
+.jupyter/
+
+# MLflow
+mlruns/
+
+# DVC (if used)
+.dvc/
+
+# Heroku
+*.heroku
+
+# Fly.io
+fly.toml
+
+# Environment files (keep example but ignore actual)
+.env
+.env.local
+.env.production
+.env.staging
+!.env.example
+
+# AI Trading System generated files
+trading_logs/
+strategy_outputs/
+signal_generation/
+risk_reports/
+execution_logs/
+
+# DLL and build artifacts
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
+*.ilk
+build/
+dist/
+*.user
+*.sln
+*.vcxproj
+*.filters
+
+# MT5
+*.ex5
+*.mq5
+*.log
+tester/
+*.dat
+*.hst
+
+# VS Code
+.vs/

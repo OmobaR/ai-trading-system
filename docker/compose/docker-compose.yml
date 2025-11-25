@@ -1,9 +1,13 @@
 # docker/compose/docker-compose.yml
-version: '3.8'
+version: "3.9"
 
 services:
+  # ================================
+  # TIMESCALEDB (Postgres + Timescale)
+  # ================================
   postgres:
     image: timescale/timescaledb:latest-pg16
+    container_name: ai_trading_timescaledb
     environment:
       POSTGRES_DB: trading_system
       POSTGRES_USER: user
@@ -12,19 +16,87 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d trading_system"]
+      interval: 10s
+      retries: 10
+      timeout: 5s
 
+  # ================================
+  # REDIS
+  # ================================
   redis:
-    image: redis:latest
+    image: redis:7.2-alpine
+    container_name: ai_trading_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  market_data_agent:
-    build: .
+  # ================================
+  # REDIS COMMANDER
+  # ================================
+  redis_commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ai_trading_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
     depends_on:
-      - postgres
       - redis
+
+  # ================================
+  # NODE EXPORTER (System metrics)
+  # ================================
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: ai_trading_node_exporter
+    ports:
+      - "9100:9100"
+
+  # ================================
+  # PROMETHEUS (Monitoring)
+  # ================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai_trading_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - node_exporter
+
+  # ================================
+  # GRAFANA (Dashboard)
+  # ================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai_trading_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # ================================
+  # MARKET DATA AGENT
+  # ================================
+  market_data_agent:
+    build: ../..    # root of your app (adjust if needed)
+    container_name: ai_trading_market_agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -34,6 +106,10 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
 
+# ================================
+# VOLUMES
+# ================================
 volumes:
   postgres_data:
   redis_data:
+  grafana_data:

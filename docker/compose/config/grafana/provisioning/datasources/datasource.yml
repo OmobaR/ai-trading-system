@@ -1,9 +1,22 @@
 #docker/compose/config/grafana/provisioning/datasources/datasource.yml
 apiVersion: 1
+
 datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://ai_trading_prometheus:9090
+    url: http://prometheus:9090
     isDefault: true
+    editable: true
+
+  - name: TimescaleDB
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    database: ai_trading_db
+    user: postgres
+    secureJsonData:
+      password: "password"
+    jsonData:
+      sslmode: "disable"
     editable: true

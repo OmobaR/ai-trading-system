@@ -1,27 +1,26 @@
 # docker/compose/docker-compose.dev.yml
-version: '3.8'
 
 services:
+  # TimescaleDB
   timescaledb:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:latest-pg16
     container_name: ai_trading_timescaledb
     environment:
-      - POSTGRES_DB=ai_trading_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      POSTGRES_DB: ai_trading_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
-      - ./src/database/timescaledb_setup.sql:/docker-entrypoint-initdb.d/01-init.sql
-    networks:
-      - trading_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ai_trading_db"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
+  # Redis
   redis:
     image: redis:7.2-alpine
     container_name: ai_trading_redis
@@ -29,52 +28,33 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
-    networks:
-      - trading_network
+      - ./config/redis/redis.conf:/etc/redis/redis.conf:ro
+    command: redis-server /etc/redis/redis.conf
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 5
 
+  # Redis Commander (Web UI)
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: ai_trading_redis_commander
     environment:
-      - REDIS_HOSTS=local:redis:6379
+      REDIS_HOSTS: local:redis:6379
     ports:
       - "8081:8081"
-    networks:
-      - trading_network
     depends_on:
       - redis
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ai_trading_grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./docker/config/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./docker/config/grafana/datasources:/etc/grafana/provisioning/datasources
-    networks:
-      - trading_network
-    depends_on:
-      - timescaledb
-
+  # Prometheus
   prometheus:
     image: prom/prometheus:latest
     container_name: ai_trading_prometheus
     ports:
       - "9090:9090"
     volumes:
-      - prometheus_data:/prometheus
-      - ./docker/config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -82,15 +62,57 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
-    networks:
-      - trading_network
+    depends_on:
+      - timescaledb
+      - redis
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai_trading_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+
+  # Python Trading App
+  trading-app:
+    build:
+      context: ../..
+      dockerfile: docker/compose/Dockerfile
+    container_name: ai_trading_app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=ai_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHON_ENV=development
+    volumes:
+      - ../../src:/app/src
+      - ../../scripts:/app/scripts
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=2)"] 
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   timescaledb_data:
   redis_data:
   grafana_data:
-  prometheus_data:
-
-networks:
-  trading_network:
-    driver: bridge

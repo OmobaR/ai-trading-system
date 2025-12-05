@@ -1,5 +1,4 @@
 # docker/compose/docker-compose.yml
-version: "3.9"
 
 services:
   # ================================
@@ -19,8 +18,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user -d trading_system"]
       interval: 10s
-      retries: 10
-      timeout: 5s
+      retries: 20          # increase from 10
+      timeout: 10s         # increase from 5s
+      start_period: 30s    # give initial startup time
 
   # ================================
   # REDIS
@@ -90,7 +90,9 @@ services:
   # MARKET DATA AGENT
   # ================================
   market_data_agent:
-    build: ../..    # root of your app (adjust if needed)
+    build:
+      context: ../..                   # project root: ai-trading-system
+      dockerfile: docker/compose/Dockerfile
     container_name: ai_trading_market_agent
     depends_on:
       postgres:

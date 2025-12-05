@@ -1,0 +1,37 @@
+# CORE DATA & ANALYSIS
+pandas>=2.1.4
+numpy>=1.25.2
+scipy>=1.11.4
+
+# DATABASE & STORAGE
+psycopg2-binary>=2.9.7
+redis>=5.0.1
+sqlalchemy>=2.0.23
+python-dotenv>=1.0.0
+
+# MACHINE LEARNING
+scikit-learn>=1.3.2
+hmmlearn>=0.3.1
+
+# TECHNICAL ANALYSIS (Lighter alternative)
+ta-lib>=0.4.28
+
+# API & WEB
+fastapi>=0.104.1
+uvicorn>=0.24.0
+requests>=2.31.0
+aiohttp>=3.9.1
+
+# MONITORING
+prometheus-client>=0.19.0
+
+# TESTING
+pytest>=7.4.3
+
+# UTILITIES
+tqdm>=4.66.1
+pyyaml>=6.0.1
+click>=8.1.7
+
+# TIME SERIES
+statsmodels>=0.14.0

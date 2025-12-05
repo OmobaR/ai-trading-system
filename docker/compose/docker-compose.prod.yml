@@ -1,5 +1,4 @@
-version: "3.9"
-
+# docker/compose/docker-compose.prod.yml
 networks:
   trading_net:
     driver: bridge

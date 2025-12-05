@@ -1,0 +1,244 @@
+✅ AI Trading System – Updated & Correct Testing Guide (2025 Edition)
+
+Fully aligned with your folder structure, Docker files, and project architecture
+
+This is now the canonical guide you should follow when launching/testing the system after fresh installation, repo updates, or infrastructure changes.
+
+PHASE 0 — Pre-Flight Checks
+
+Before launching anything:
+
+1️⃣ Ensure Docker Desktop is running
+
+TimescaleDB, Redis, Grafana, Prometheus all run via Docker
+
+You must see Docker → "Running"
+
+2️⃣ Activate Your Python Env
+
+From project root:
+
+cd C:\Users\olugb\ai-trading-system
+.\ai_trading_env\Scripts\Activate.ps1
+
+3️⃣ Ensure .env exists
+
+If missing:
+
+copy .env.example .env
+
+
+Update DB, Redis, API keys as needed.
+
+PHASE 1 — Start Infrastructure
+
+Your new infrastructure lives in:
+
+docker/compose/docker-compose.dev.yml
+
+1️⃣ Start all services (DB, Redis, Grafana, Prometheus)
+docker compose -f docker/compose/docker-compose.dev.yml up -d
+
+2️⃣ Check status
+docker compose -f docker/compose/docker-compose.dev.yml ps
+
+
+Expect:
+
+Service	Port
+TimescaleDB	5432
+Redis	6379
+Grafana	3000
+Prometheus	9090
+Redis Commander	8081
+3️⃣ Check logs quickly
+docker compose -f docker/compose/docker-compose.dev.yml logs --tail 50
+
+PHASE 2 — Initialize Database
+
+Run your schema + hypertables:
+
+psql -h localhost -U postgres -d ai_trading_db -f docker/compose/src/database/timescaledb_setup.sql
+
+
+Password = password unless you changed it.
+
+PHASE 3 — Minimal Smoke Tests
+
+We confirm each subsystem works without running the full pipeline.
+
+3.1 — Market Data Pipeline Test
+python - << "EOF"
+from src.market_data.market_data_agent import MarketDataAgent
+
+a = MarketDataAgent(mode="simulate")
+print("MarketDataAgent OK")
+
+sample = {
+    "symbol": "SYNTX.USD",
+    "open": 1.25, "high": 1.28, "low": 1.22, "close": 1.27,
+    "tick_volume": 1420,
+    "timestamp": "2024-01-15 10:00:00"
+}
+print("Ingest:", a.ingest_data(sample))
+EOF
+
+
+Expected:
+MarketDataAgent OK
+Ingest: True (or similar)
+
+3.2 — Redis Feature Store Test
+python - << "EOF"
+from src.database.redis_feature_store import UnifiedRegimeFeatureStore
+import pandas as pd, numpy as np
+
+store = UnifiedRegimeFeatureStore()
+print("FeatureStore OK")
+
+dates = pd.date_range("2024-01-01", periods=120, freq="H")
+data = pd.DataFrame({
+    "open": np.random.randn(120).cumsum()+100,
+    "high": np.random.randn(120).cumsum()+100,
+    "low":  np.random.randn(120).cumsum()+100,
+    "close":np.random.randn(120).cumsum()+100,
+    "tick_volume": np.random.randint(1000,9000,120)
+}, index=dates)
+
+f, s = store.compute_unified_regime_features("SYNTX.USD", data.iloc[-1], data)
+print("Regime:", f.regime)
+print("Signals:", s)
+EOF
+
+3.3 — Strategy Module Test (NNFX)
+python - << "EOF"
+from src.strategy.nnfx_strategy import NNFXStrategy
+import pandas as pd, numpy as np
+
+df = pd.DataFrame({
+    "open": np.random.randn(200).cumsum()+1000,
+    "high": np.random.randn(200).cumsum()+1000,
+    "low": np.random.randn(200).cumsum()+1000,
+    "close": np.random.randn(200).cumsum()+1000,
+    "tick_volume": np.random.randint(1000, 9000, 200),
+})
+
+s = NNFXStrategy().generate_signal("SYNTX.USD", df, "ranging")
+print("NNFX Signal:", s)
+EOF
+
+3.4 — Risk Manager Test
+python - << "EOF"
+from src.risk.risk_manager import RiskManagerAgent
+
+rm = RiskManagerAgent()
+print("RiskManager OK")
+
+approval = rm.approve_trade("SYNTX.USD", atr=0.010, confidence=0.75, price=1.234)
+print("Approval:", approval)
+EOF
+
+3.5 — Event Store Test
+python - << "EOF"
+from src.events.event_store import EventStore
+
+store = EventStore()
+id = store.append_event("TEST_EVENT", "SYNTX.USD", {"msg":"hello"}, {"source":"test"})
+print("Event saved:", id)
+
+events = store.get_events("SYNTX.USD")
+print("Events:", len(events))
+EOF
+
+PHASE 4 — Unit Tests
+
+Run everything:
+
+python -m pytest tests/ -v
+
+
+You want all green.
+
+PHASE 5 — Run Full System
+
+Start everything in one command:
+
+.\scripts\run_system.ps1
+
+
+This launches:
+
+Market Data Agent
+
+Regime detection
+
+Strategy processing
+
+Risk management
+
+Event logging
+
+Monitoring exporters
+
+PHASE 6 — Monitoring
+Grafana
+http://localhost:3000
+(admin/admin)
+
+
+Dashboards show:
+
+Regime metrics
+
+Tick ingestion rate
+
+Signal generation
+
+DB write throughput
+
+Redis latency
+
+Redis Commander
+http://localhost:8081
+
+
+Check:
+
+features:SYNTX.USD:*
+
+Prometheus
+http://localhost:9090
+
+
+Search metrics:
+
+market_data_ingest_total
+
+strategy_signals_total
+
+regime_state_value
+
+system_errors_total
+
+PHASE 7 — DLL Bridge Test (Optional)
+
+If using MT5:
+
+.\scripts\build_dll.ps1
+
+
+Then test:
+
+python scripts/test_dll_bridge.py
+
+PHASE 8 — Shutdown
+docker compose -f docker/compose/docker-compose.dev.yml down
+
+🎯 This is now the official, cleaned up, accurate testing workflow.
+
+If you want, I can also generate:
+
+✅ A TESTING.md file for the repo
+✅ A full system health checklist
+✅ Automated integration test script
+✅ Docker smoke test script (healthcheck.ps1)

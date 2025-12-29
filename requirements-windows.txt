@@ -1,3 +1,4 @@
+# requirements-windows.txt
 # === CORE DEPENDENCIES ===
 # REMOVED: Python>=3.8 (Invalid - Python is the interpreter, not a package)
 

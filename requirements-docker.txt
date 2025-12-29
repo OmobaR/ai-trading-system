@@ -1,5 +1,6 @@
+# requirements-docker.txt
 # CORE DATA & ANALYSIS
-pandas>=2.1.4
+pandas>=2.0.3
 numpy>=1.25.2
 scipy>=1.11.4
 
@@ -34,4 +35,4 @@ pyyaml>=6.0.1
 click>=8.1.7
 
 # TIME SERIES
-statsmodels>=0.14.0
+statsmodels==0.14.1

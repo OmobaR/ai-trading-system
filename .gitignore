@@ -325,3 +325,52 @@ tester/
 
 # VS Code
 .vs/
+# ===========================
+# AI TRADING SYSTEM - SPECIFIC UPDATES
+# ===========================
+
+# MT5 Bridge temporary files
+mt5_bridge_logs/
+*.bridge.log
+mt5_ea_logs/
+
+# Temporary fix scripts (from recent debugging)
+fix_*.py
+fix_*.sh
+ensure_*.py
+find_*.py
+verify_*.py
+test_*.py
+quick_*.sh
+restart_*.sh
+check_*.py
+docker_fix_*.txt
+
+# MT5 Windows installation (do NOT commit platform binaries)
+MT5/
+MetaTrader 5/
+Program Files/MetaTrader 5/
+AppData/Roaming/MetaQuotes/
+*.ex5
+*.mq5
+*.ex4
+*.mq4
+*.chk
+*.dat
+*.hst
+*.fxt
+*.tick
+MQL5/
+MQL4/
+Experts/
+Files/
+Tester/
+*.ico
+*.dll
+
+# Git backup files
+*backup*
+*backup.*
+*.backup*
+*_backup_*
+.git-backup/

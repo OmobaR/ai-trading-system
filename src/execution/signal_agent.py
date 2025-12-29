@@ -9,10 +9,10 @@ from datetime import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from src.strategy.nnfx_strategy import NNFXStrategy, NNFXSignal
-    from src.risk.risk_manager import RiskManagerAgent
-    from src.database.redis_feature_store import UnifiedRegimeFeatureStore
-    from src.events.event_store import EventStore
+    from strategy.nnfx_strategy import NNFXStrategy, NNFXSignal
+    from risk.risk_manager import RiskManagerAgent
+    from database.redis_feature_store import UnifiedRegimeFeatureStore
+    from events.event_store import EventStore
 except ImportError as e:
     print(f"Import error: {e}")
     # Fallback for when running in DLL context

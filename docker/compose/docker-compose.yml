@@ -1,33 +1,38 @@
-# docker/compose/docker-compose.yml
-
 services:
   # ================================
-  # TIMESCALEDB (Postgres + Timescale)
+  # TIMESCALEDB (Future-Proof)
   # ================================
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.24.0-pg16  # Fixed version for stability
     container_name: ai_trading_timescaledb
     environment:
-      POSTGRES_DB: trading_system
-      POSTGRES_USER: user
+      POSTGRES_DB: ai_trading_db
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro  # Custom init scripts
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d trading_system"]
+      test: ["CMD-SHELL", "pg_isready -d ai_trading_db"]  # Remove -U (no user needed for local check)
       interval: 10s
-      retries: 20          # increase from 10
-      timeout: 10s         # increase from 5s
-      start_period: 30s    # give initial startup time
+      timeout: 10s
+      retries: 60  # Double to allow more attempts
+      start_period: 120s  # Give 2 minutes for extension load
+    restart: always  # Auto-restart if unhealthy
 
-  # ================================
-  # REDIS
-  # ================================
+  # ===========================================
+  # REDIS (Stable Alpine with optimized config)
+  # ===========================================
   redis:
     image: redis:7.2-alpine
     container_name: ai_trading_redis
+    command:
+      - redis-server
+      - --maxmemory 256mb  # Limit memory to prevent bloat
+      - --save 300 1  # Less frequent saves for smaller RDB
+      - --loglevel notice  # Quieter logging
     ports:
       - "6379:6379"
     volumes:
@@ -36,62 +41,16 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 30
+      start_period: 60s  # Extended for startup
+    restart: always  # Auto-restart if unhealthy
 
   # ================================
-  # REDIS COMMANDER
-  # ================================
-  redis_commander:
-    image: rediscommander/redis-commander:latest
-    container_name: ai_trading_redis_commander
-    environment:
-      REDIS_HOSTS: local:redis:6379
-    ports:
-      - "8081:8081"
-    depends_on:
-      - redis
-
-  # ================================
-  # NODE EXPORTER (System metrics)
-  # ================================
-  node_exporter:
-    image: prom/node-exporter:latest
-    container_name: ai_trading_node_exporter
-    ports:
-      - "9100:9100"
-
-  # ================================
-  # PROMETHEUS (Monitoring)
-  # ================================
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: ai_trading_prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
-    depends_on:
-      - node_exporter
-
-  # ================================
-  # GRAFANA (Dashboard)
-  # ================================
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ai_trading_grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-
-  # ================================
-  # MARKET DATA AGENT
+  # MARKET DATA AGENT (Optimized)
   # ================================
   market_data_agent:
     build:
-      context: ../..                   # project root: ai-trading-system
+      context: ../..
       dockerfile: docker/compose/Dockerfile
     container_name: ai_trading_market_agent
     depends_on:
@@ -102,11 +61,88 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: trading_system
-      DB_USER: user
+      DB_NAME: ai_trading_db
+      DB_USER: postgres
       DB_PASSWORD: password
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      LOG_FILE: /tmp/trading_system.log
+    volumes:
+      - market_logs:/app/logs  # Mount logs for persistence
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]  # Simple alive check
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ====================================
+  # MONITORING STACK (with healthchecks)
+  # ====================================
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: ai_trading_node_exporter
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9100/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always  # Added for robustness
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai_trading_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - node_exporter
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: always  # Added for robustness
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai_trading_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10  # Increased
+      start_period: 60s  # Extended for dashboard init
+    restart: always  # Added for robustness
+
+  redis_commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ai_trading_redis_commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 10  # Increased
+      start_period: 60s  # Extended for connection
+    restart: always  # Added for robustness
 
 # ================================
 # VOLUMES
@@ -115,3 +151,4 @@ volumes:
   postgres_data:
   redis_data:
   grafana_data:
+  market_logs:

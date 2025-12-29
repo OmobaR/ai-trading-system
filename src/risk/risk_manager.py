@@ -1,7 +1,7 @@
 # src/risk/risk_manager.py
 import logging
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 import pandas as pd
 

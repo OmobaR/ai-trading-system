@@ -1,11 +1,12 @@
-version: "3.9"
+# docker/compose/docker-compose.yml
+
 
 services:
-  # =====================================
-  # TIMESCALEDB (slow-first-start tolerant)
-  # =====================================
+  # ================================
+  # TIMESCALEDB (Future-Proof)
+  # ================================
   postgres:
-    image: timescale/timescaledb:2.24.0-pg16
+    image: timescale/timescaledb:2.24.0-pg16  # Fixed version for stability
     container_name: ai_trading_timescaledb
     environment:
       POSTGRES_DB: ai_trading_db
@@ -15,26 +16,20 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/init:/docker-entrypoint-initdb.d:ro
+      - ./sql/init:/docker-entrypoint-initdb.d:ro  # Custom init scripts
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ai_trading_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_trading_db"]
       interval: 10s
       timeout: 10s
-      retries: 60
-      start_period: 180s
-    restart: always
+      retries: 30  # Increased from 20
+      start_period: 60s  # Increased from 45s; give it 1 minute to load extensions
 
-  # =====================
-  # REDIS (slow RDB load)
-  # =====================
+  # ================================
+  # REDIS (Stable Alpine)
+  # ================================
   redis:
     image: redis:7.2-alpine
     container_name: ai_trading_redis
-    command:
-      - redis-server
-      - --maxmemory 256mb
-      - --save 300 1
-      - --loglevel notice
     ports:
       - "6379:6379"
     volumes:
@@ -43,13 +38,11 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 30
-      start_period: 120s
-    restart: always
+      retries: 5
 
-  # =========================
-  # MARKET DATA AGENT
-  # =========================
+  # ================================
+  # MARKET DATA AGENT (Optimized)
+  # ================================
   market_data_agent:
     build:
       context: ../..
@@ -70,24 +63,17 @@ services:
       REDIS_PORT: 6379
       LOG_FILE: /tmp/trading_system.log
     volumes:
-      - market_logs:/app/logs
-    restart: always
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      - market_logs:/app/logs  # Mount logs for persistence
+    restart: unless-stopped
 
-  # =====================
-  # MONITORING
-  # =====================
+  # ================================
+  # MONITORING STACK
+  # ================================
   node_exporter:
     image: prom/node-exporter:latest
     container_name: ai_trading_node_exporter
     ports:
       - "9100:9100"
-    restart: always
 
   prometheus:
     image: prom/prometheus:latest
@@ -98,7 +84,6 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
       - node_exporter
-    restart: always
 
   grafana:
     image: grafana/grafana:latest
@@ -109,7 +94,6 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
-    restart: always
 
   redis_commander:
     image: rediscommander/redis-commander:latest
@@ -120,8 +104,10 @@ services:
       - "8081:8081"
     depends_on:
       - redis
-    restart: always
 
+# ================================
+# VOLUMES
+# ================================
 volumes:
   postgres_data:
   redis_data:

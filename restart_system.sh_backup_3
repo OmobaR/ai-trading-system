@@ -1,0 +1,30 @@
+#!/bin/bash
+
+DOCKER_COMPOSE_FILE="docker/compose/docker-compose.yml"
+
+echo "🚀 AI Trading System Restart Script"
+echo "1. Stopping services..."
+docker-compose -f "$DOCKER_COMPOSE_FILE" down
+
+# Optional: Purge volumes if flag provided (e.g., ./restart_system.sh --purge)
+if [ "$1" = "--purge" ]; then
+    echo "Purging volumes for clean start..."
+    docker volume rm $(docker volume ls -q | grep -E "postgres|redis|grafana|market_logs")
+fi
+
+echo "2. Rebuilding agent image..."
+docker-compose -f "$DOCKER_COMPOSE_FILE" build --no-cache market_data_agent
+
+echo "3. Starting full stack..."
+docker-compose -f "$DOCKER_COMPOSE_FILE" up -d
+
+echo "4. Waiting for initialization (120s)..."
+sleep 120
+
+echo "5. Verifying status..."
+docker-compose -f "$DOCKER_COMPOSE_FILE" ps
+
+echo "6. Checking key logs..."
+docker-compose -f "$DOCKER_COMPOSE_FILE" logs --tail=20 market_data_agent | grep -i "initialized\|error\|connected"
+
+echo "✅ Restart complete! Monitor with: docker-compose logs -f market_data_agent"

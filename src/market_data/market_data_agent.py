@@ -85,8 +85,8 @@ else:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-from src.events.event_store import EventStore
-from src.database.redis_feature_store import UnifiedRegimeFeatureStore, BaseRegimeFeatures, NNFXSignals
+from events.event_store import EventStore
+from database.redis_feature_store import UnifiedRegimeFeatureStore, BaseRegimeFeatures, NNFXSignals
 
 class MarketDataAgent:
     def __init__(self, db_config, redis_config, mt5_config=None, mode='simulate', regime_model='comprehensive'):

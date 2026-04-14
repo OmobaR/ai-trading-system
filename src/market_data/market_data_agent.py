@@ -460,15 +460,16 @@ class MarketDataAgent:
             time.sleep(60)  # Poll every 60 seconds
 
     def run_simulate(self):
-        """Run simulation data generation"""
         logger.info("Starting simulation data generation")
-        
+        import traceback
         base_prices = {symbol: 100.0 + i * 10 for i, symbol in enumerate(self.symbols)}
         
+        iteration = 0
         while self.running:
+            iteration += 1
+            logger.debug(f"Simulation loop iteration {iteration}")
             for symbol in self.symbols:
                 try:
-                    # Generate realistic price movement with some trends
                     base = base_prices[symbol]
                     change = random.uniform(-2.0, 2.0)
                     new_price = base + change
@@ -483,24 +484,80 @@ class MarketDataAgent:
                         'volume': random.randint(800, 2000)
                     }
                     
+                    logger.debug(f"Generated data for {symbol}: {data['close']}")
                     self.ingest_data(data)
                     base_prices[symbol] = new_price
                     
                 except Exception as e:
-                    logger.error(f"Error generating simulation data for {symbol}: {e}")
+                    logger.error(f"Error in simulation loop for {symbol}: {e}")
+                    logger.error(traceback.format_exc())
             
-            time.sleep(5)  # Generate data every 5 seconds
+            logger.debug(f"Sleeping for 5 seconds")
+            time.sleep(5)
+        logger.info("Simulation loop ended")
 
     def run(self):
-        """Main run method"""
+        logger.info(f"run() called, mode={self.mode}")
         self.running = True
-        
+        logger.debug(f"self.running set to {self.running}")
         if self.mode == 'historical':
             self.run_historical()
         elif self.mode == 'live':
             self.run_live()
         elif self.mode == 'simulate':
             self.run_simulate()
+        logger.info(f"run() finished, self.running={self.running}")
+
+    def run_simulate(self):
+        logger.info("Starting simulation data generation")
+        logger.debug(f"run_simulate: self.running = {self.running}")
+        
+        # Force running to True for this run (temporary fix)
+        if not self.running:
+            logger.warning("run_simulate: self.running was False, setting to True")
+            self.running = True
+        
+        base_prices = {symbol: 100.0 + i * 10 for i, symbol in enumerate(self.symbols)}
+        iteration = 0
+        
+        logger.debug("Entering main loop")
+        while self.running:
+            iteration += 1
+            logger.debug(f"Loop iteration {iteration} start")
+            
+            for symbol in self.symbols:
+                try:
+                    base = base_prices[symbol]
+                    change = random.uniform(-2.0, 2.0)
+                    new_price = base + change
+                    
+                    data = {
+                        'time': datetime.now(),
+                        'symbol': symbol,
+                        'open': base,
+                        'high': max(base, new_price) + random.uniform(0, 1.0),
+                        'low': min(base, new_price) - random.uniform(0, 1.0),
+                        'close': new_price,
+                        'volume': random.randint(800, 2000)
+                    }
+                    
+                    logger.debug(f"Generated data for {symbol}: close={data['close']:.4f}")
+                    
+                    # Call ingest_data and log result
+                    self.ingest_data(data)
+                    logger.debug(f"Ingested {symbol}")
+                    
+                    base_prices[symbol] = new_price
+                    
+                except Exception as e:
+                    import traceback
+                    logger.error(f"Error in simulation loop for {symbol}: {e}")
+                    logger.error(traceback.format_exc())
+            
+            logger.debug(f"Sleeping for 5 seconds (iteration {iteration})")
+            time.sleep(5)
+        
+        logger.info("Simulation loop ended")
 
     def stop(self):
         """Stop the agent"""

@@ -1,129 +1,63 @@
-version: "3.9"
+-- TimescaleDB setup for AI Trading System
+-- Enable TimescaleDB extension
+CREATE EXTENSION IF NOT EXISTS timescaledb;
 
-services:
-  # =====================================
-  # TIMESCALEDB (slow-first-start tolerant)
-  # =====================================
-  postgres:
-    image: timescale/timescaledb:2.24.0-pg16
-    container_name: ai_trading_timescaledb
-    environment:
-      POSTGRES_DB: ai_trading_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./sql/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -d ai_trading_db"]
-      interval: 10s
-      timeout: 10s
-      retries: 60
-      start_period: 180s
-    restart: always
+-- ===================
+-- EVENTS TABLE (hypertable)
+-- ===================
+-- For event sourcing, we often don't need a single-column primary key.
+-- We'll use a composite primary key (timestamp, id) to satisfy TimescaleDB.
+CREATE TABLE IF NOT EXISTS events (
+    id SERIAL,
+    event_type TEXT NOT NULL,
+    aggregate_id TEXT,
+    data JSONB,
+    metadata JSONB,
+    version INTEGER,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (timestamp, id)
+);
 
-  # =====================
-  # REDIS (slow RDB load)
-  # =====================
-  redis:
-    image: redis:7.2-alpine
-    container_name: ai_trading_redis
-    command:
-      - redis-server
-      - --maxmemory 256mb
-      - --save 300 1
-      - --loglevel notice
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 120s
-    restart: always
+-- Convert to hypertable
+SELECT create_hypertable('events', 'timestamp', if_not_exists => TRUE);
 
-  # =========================
-  # MARKET DATA AGENT
-  # =========================
-  market_data_agent:
-    build:
-      context: ../..
-      dockerfile: docker/compose/Dockerfile
-    container_name: ai_trading_market_agent
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ai_trading_db
-      DB_USER: postgres
-      DB_PASSWORD: password
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      LOG_FILE: /tmp/trading_system.log
-    volumes:
-      - market_logs:/app/logs
-    restart: always
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+-- Indexes for fast filtering
+CREATE INDEX IF NOT EXISTS idx_events_aggregate_id ON events(aggregate_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type, timestamp DESC);
 
-  # =====================
-  # MONITORING
-  # =====================
-  node_exporter:
-    image: prom/node-exporter:latest
-    container_name: ai_trading_node_exporter
-    ports:
-      - "9100:9100"
-    restart: always
+-- ===================
+-- MARKET_DATA TABLE (hypertable)
+-- ===================
+CREATE TABLE IF NOT EXISTS market_data (
+    id SERIAL,
+    symbol TEXT NOT NULL,
+    open DECIMAL(20,8),
+    high DECIMAL(20,8),
+    low DECIMAL(20,8),
+    close DECIMAL(20,8),
+    volume BIGINT,
+    timestamp TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (timestamp, id)
+);
 
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: ai_trading_prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
-    depends_on:
-      - node_exporter
-    restart: always
+SELECT create_hypertable('market_data', 'timestamp', if_not_exists => TRUE);
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ai_trading_grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    restart: always
+CREATE INDEX IF NOT EXISTS idx_market_data_symbol_timestamp ON market_data(symbol, timestamp DESC);
 
-  redis_commander:
-    image: rediscommander/redis-commander:latest
-    container_name: ai_trading_redis_commander
-    environment:
-      REDIS_HOSTS: local:redis:6379
-    ports:
-      - "8081:8081"
-    depends_on:
-      - redis
-    restart: always
+-- ===================
+-- TRADE_SIGNALS TABLE (hypertable)
+-- ===================
+CREATE TABLE IF NOT EXISTS trade_signals (
+    id SERIAL,
+    symbol TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    confidence DECIMAL(5,4),
+    position_size DECIMAL(10,6),
+    stop_loss DECIMAL(20,8),
+    take_profit DECIMAL(20,8),
+    strategy TEXT,
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (timestamp, id)
+);
 
-volumes:
-  postgres_data:
-  redis_data:
-  grafana_data:
-  market_logs:
+SELECT create_hypertable('trade_signals', 'timestamp', if_not_exists => TRUE);

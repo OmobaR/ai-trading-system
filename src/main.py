@@ -1,4 +1,3 @@
-# C:\Users\olugb\ai-trading-system\src\main.py.backup
 #!/usr/bin/env python3
 """
 AI Trading System - Main Entry Point
@@ -13,33 +12,32 @@ import time
 from datetime import datetime
 import os
 import random
+import argparse
 
-# Fix imports to work from any directory
+# Fix imports
 try:
     from market_data.market_data_agent import MarketDataAgent
     from database.redis_feature_store import UnifiedRegimeFeatureStore
     from events.event_store import EventStore
     from risk.risk_manager import RiskManagerAgent
     from strategy.nnfx_strategy import NNFXStrategy
+    from config.settings import config
 except ImportError:
-    # Fallback for direct execution
-    import sys
-    import os
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     from market_data.market_data_agent import MarketDataAgent
     from database.redis_feature_store import UnifiedRegimeFeatureStore
     from events.event_store import EventStore
     from risk.risk_manager import RiskManagerAgent
     from strategy.nnfx_strategy import NNFXStrategy
+    from config.settings import config
 
 # Configure logging
 log_dir = '/tmp'
 log_file_path = os.path.join(log_dir, 'trading_system.log')
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir, exist_ok=True)
+os.makedirs(log_dir, exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
@@ -49,213 +47,132 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class AITradingSystem:
-    """Main orchestrator for the AI Trading System"""
-    
-    def __init__(self):
+    def __init__(self, cli_mode=None):
         self.running = False
         self.components = {}
         
-        # Configuration
+        # Use config singleton
+        self.config = config
+        self.mode = cli_mode if cli_mode else self.config.MODE
+        
         self.db_config = {
-            'host': os.getenv('DB_HOST', 'localhost'),
-            'port': int(os.getenv('DB_PORT', 5432)),
-            'database': os.getenv('POSTGRES_DB', 'ai_trading_db'),
-            'user': os.getenv('POSTGRES_USER', 'postgres'),
-            'password': os.getenv('POSTGRES_PASSWORD', 'password')
+            'host': self.config.DB_HOST,
+            'port': self.config.DB_PORT,
+            'database': self.config.DB_NAME,
+            'user': self.config.DB_USER,
+            'password': self.config.DB_PASSWORD
         }
         
         self.redis_config = {
-            'host': os.getenv('REDIS_HOST', 'localhost'),
-            'port': int(os.getenv('REDIS_PORT', 6379)),
-            'db': 0
+            'host': self.config.REDIS_HOST,
+            'port': self.config.REDIS_PORT,
+            'db': self.config.REDIS_DB
         }
         
         self.mt5_config = {
-            'login': int(os.getenv('MT5_LOGIN', 19345714)),
-            'password': os.getenv('MT5_PASSWORD', 'bL$3Vs5)'),
-            'server': os.getenv('MT5_SERVER', 'Weltrade-Demo')
+            'login': self.config.MT5_LOGIN,
+            'password': self.config.MT5_PASSWORD,
+            'server': self.config.MT5_SERVER
         }
     
-    def retry_sync(
-        self,
-        func,
-        max_retries=5,
-        base_delay=2,
-        exceptions=(Exception,)
-    ):
-        """
-        Generic sync retry wrapper with exponential backoff and jitter.
-        """
+    def retry_sync(self, func, max_retries=5, base_delay=2, exceptions=(Exception,)):
         for attempt in range(1, max_retries + 1):
             try:
                 return func()
             except exceptions as e:
                 if attempt == max_retries:
-                    logger.error(f"Max retries reached; giving up. Error: {e}")
                     raise
-
-                # Exponential backoff + jitter
                 delay = base_delay * attempt + random.uniform(0, 0.5)
-                logger.warning(
-                    f"[{attempt}/{max_retries}] Connection failed: {e}. "
-                    f"Retrying in {delay:.1f}s..."
-                )
+                logger.warning(f"Retry {attempt}/{max_retries} in {delay:.1f}s: {e}")
                 time.sleep(delay)
     
     def initialize_components(self):
-        """Initialize all trading system components"""
         logger.info("Initializing AI Trading System components...")
-        
         try:
-            # Event Store
-            self.components['event_store'] = self.retry_sync(
-                lambda: EventStore(self.db_config)
-            )
+            self.components['event_store'] = self.retry_sync(lambda: EventStore(self.db_config))
             logger.info("Event Store initialized")
             
-            # Feature Store
             self.components['feature_store'] = self.retry_sync(
-                lambda: UnifiedRegimeFeatureStore(
-                    self.redis_config, 
-                    regime_model='comprehensive'
-                )
+                lambda: UnifiedRegimeFeatureStore(self.redis_config, regime_model='comprehensive')
             )
             logger.info("Feature Store initialized")
             
-            # Market Data Agent
-            self.components['market_data'] = self.retry_sync(
-                lambda: MarketDataAgent(
-                    self.db_config,
-                    self.redis_config,
-                    self.mt5_config,
-                    mode='simulate',  # Change to 'live' for production
-                    regime_model='comprehensive'
-                )
+            # Create market data agent with mode from config or CLI
+            agent = MarketDataAgent(
+                self.db_config, self.redis_config, self.mt5_config,
+                mode=self.mode,
+                regime_model='comprehensive'
             )
+            # CRITICAL: Set running flag to True
+            agent.running = True
+            self.components['market_data'] = agent
             logger.info("Market Data Agent initialized")
             
-            # Risk Manager
-            self.components['risk_manager'] = self.retry_sync(
-                lambda: RiskManagerAgent(self.redis_config)
-            )
+            self.components['risk_manager'] = self.retry_sync(lambda: RiskManagerAgent(self.redis_config))
             logger.info("Risk Manager initialized")
             
-            # Strategy Engine
-            self.components['strategy'] = self.retry_sync(
-                lambda: NNFXStrategy()
-            )
+            self.components['strategy'] = self.retry_sync(lambda: NNFXStrategy())
             logger.info("Strategy Engine initialized")
             
             logger.info("All components initialized successfully")
             return True
-            
         except Exception as e:
             logger.error(f"Failed to initialize components: {e}")
             return False
     
     async def run_market_data_pipeline(self):
-        """Run the market data ingestion pipeline"""
         logger.info("Starting market data pipeline...")
-        
+        agent = self.components['market_data']
         while self.running:
             try:
-                # Run market data collection
-                self.components['market_data'].run_simulate()
-                
-                # Brief pause to prevent overwhelming the system
-                await asyncio.sleep(5)
-                
+                await asyncio.to_thread(agent.run_simulate)
+                await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"Market data pipeline error: {e}")
-                await asyncio.sleep(10)  # Longer pause on error
+                await asyncio.sleep(5)
     
     async def run_strategy_engine(self):
-        """Run the strategy and signal generation"""
         logger.info("Starting strategy engine...")
-        
         while self.running:
             try:
-                # Get current regimes for all symbols
                 regimes = self.components['feature_store'].get_bulk_regimes(
                     self.components['market_data'].symbols
                 )
-                
-                # Generate trading signals based on regimes
-                for symbol, regime in regimes.items():
-                    if regime and "trending" in regime:
-                        # In a full implementation, this would generate actual trading signals
-                        logger.debug(f"{symbol} in {regime} regime - potential trading opportunity")
-                
-                await asyncio.sleep(10)  # Check strategies every 10 seconds
-                
+                # Placeholder – actual signal generation can be added here
+                await asyncio.sleep(10)
             except Exception as e:
                 logger.error(f"Strategy engine error: {e}")
                 await asyncio.sleep(30)
     
     async def run_risk_monitor(self):
-        """Run continuous risk monitoring"""
         logger.info("Starting risk monitor...")
-        
         while self.running:
-            try:
-                # Monitor portfolio risk
-                # This would integrate with actual position data in production
-                await asyncio.sleep(15)  # Check risk every 15 seconds
-                
-            except Exception as e:
-                logger.error(f"Risk monitor error: {e}")
-                await asyncio.sleep(30)
+            await asyncio.sleep(15)
     
     async def run_system_health(self):
-        """Monitor system health and metrics"""
         logger.info("Starting system health monitor...")
-        
         while self.running:
             try:
-                # Log system status
-                component_status = {}
-                for name, component in self.components.items():
-                    component_status[name] = "active" if component else "inactive"
-                
-                logger.info(f"System Status: {component_status}")
-                
-                # Store health metrics
-                health_event = {
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'component_status': component_status,
-                    'system_uptime': time.time() - self.start_time
-                }
-                
-                self.components['event_store'].append_event(
-                    'system_health',
-                    'system',
-                    health_event,
-                    {'source': 'health_monitor'}
-                )
-                
-                await asyncio.sleep(60)  # Log health every minute
-                
+                status = {name: "active" if comp else "inactive"
+                         for name, comp in self.components.items()}
+                logger.info(f"System Status: {status}")
+                await asyncio.sleep(60)
             except Exception as e:
                 logger.error(f"Health monitor error: {e}")
                 await asyncio.sleep(60)
     
     async def start(self):
-        """Start the AI trading system"""
         logger.info("Starting AI Trading System...")
-        
         if not self.initialize_components():
-            logger.error("Failed to initialize system components")
             return False
         
         self.running = True
         self.start_time = time.time()
         
-        # Set up signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
         
         try:
-            # Run all system components concurrently
             await asyncio.gather(
                 self.run_market_data_pipeline(),
                 self.run_strategy_engine(),
@@ -263,40 +180,37 @@ class AITradingSystem:
                 self.run_system_health(),
                 return_exceptions=True
             )
-            
         except Exception as e:
             logger.error(f"System runtime error: {e}")
         finally:
             await self.shutdown()
     
     def signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully"""
         logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
+        if 'market_data' in self.components:
+            self.components['market_data'].running = False
     
     async def shutdown(self):
-        """Gracefully shutdown the system"""
         logger.info("Shutting down AI Trading System...")
-        
         self.running = False
-        
-        # Stop all components
         if 'market_data' in self.components:
             self.components['market_data'].stop()
-        
         logger.info("AI Trading System shutdown complete")
 
 def main():
-    """Main entry point"""
-    system = AITradingSystem()
+    parser = argparse.ArgumentParser(description='AI Trading System')
+    parser.add_argument('--mode', choices=['simulate', 'live', 'historical'],
+                        help='Override config mode (simulate, live, historical)')
+    args = parser.parse_args()
     
+    system = AITradingSystem(cli_mode=args.mode)
     try:
-        # Run the system
         asyncio.run(system.start())
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt, shutting down...")
+        logger.info("Keyboard interrupt, shutting down...")
     except Exception as e:
-        logger.error(f"Fatal system error: {e}")
+        logger.error(f"Fatal error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

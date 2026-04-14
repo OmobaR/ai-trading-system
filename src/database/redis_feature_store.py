@@ -651,47 +651,29 @@ class UnifiedRegimeFeatureStore:
     # ===== ML TRAINING DATA METHODS =====
     
     def store_ml_training_features(self, symbol: str, features: BaseRegimeFeatures, 
-                                 signals: NNFXSignals, ohlcv_data: Dict, timestamp: datetime):
+                                signals: NNFXSignals, ohlcv_data: Dict, timestamp: datetime):
         """Store features persistently for ML training (no TTL)"""
         feature_package = {
             'symbol': symbol,
             'timestamp': timestamp.isoformat(),
-            'basic_features': {
-                'volatility': features.volatility,
-                'trend_strength': features.trend_strength,
-                'volume_profile': features.volume_profile,
-                'price_momentum': features.price_momentum,
-                'mean_reversion': features.mean_reversion,
-                'regime_confidence': features.regime_confidence,
-            },
-            'technical_features': {
-                'adx': features.adx,
-                'atr': features.atr,
-                'rsi': features.rsi,
-                'kama': features.kama,
-                'stoch_k': features.stoch_k,
-                'stoch_d': features.stoch_d,
-            },
-            'regime': features.regime_type,
-            'regime_confidence_enhanced': features.regime_confidence_enhanced,
-            'signals': {
-                'nnfx_signal': signals.nnfx_signal,
-                'signal_confidence': signals.signal_confidence,
-                'baseline_signal': signals.baseline_signal,
-                'confirmation_strength': signals.confirmation_strength,
-            },
-            'ohlcv': ohlcv_data,
-            'regime_model': self.regime_model
+            # ... rest of dictionary
         }
         
         key = f"ml_training:{symbol}:{timestamp.strftime('%Y%m%d_%H%M%S')}"
-        self.client.set(key, json.dumps(feature_package))
+        
+        # Convert datetime objects to ISO format strings
+        def json_serial(obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        self.client.set(key, json.dumps(feature_package, default=json_serial))
         
         recent_key = f"ml_recent:{symbol}"
-        self.client.lpush(recent_key, json.dumps(feature_package))
+        self.client.lpush(recent_key, json.dumps(feature_package, default=json_serial))  # FIX HERE
         self.client.ltrim(recent_key, 0, 999)
         self.client.expire(recent_key, self.regime_ttl['long_term'])
-    
+
     def export_ml_features_to_csv(self, symbol: str, days: int = 30) -> str:
         """Export features to CSV for ML training"""
         pattern = f"ml_training:{symbol}:*"

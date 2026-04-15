@@ -194,8 +194,13 @@ class UnifiedRegimeFeatureStore:
             # Adaptive moving average
             kama = talib.KAMA(close, timeperiod=20)[-1] if len(close) >= 20 else close[-1]
             
-            # Oscillators
-            stoch_k, stoch_d = talib.STOCH(high, low, close)[-1] if len(close) >= 14 else (50.0, 50.0)
+            # Oscillators - FIXED
+            if len(close) >= 14:
+                slowk, slowd = talib.STOCH(high, low, close)
+                stoch_k = slowk[-1] if len(slowk) > 0 else 50.0
+                stoch_d = slowd[-1] if len(slowd) > 0 else 50.0
+            else:
+                stoch_k, stoch_d = 50.0, 50.0
             
             basic_features.adx = adx
             basic_features.atr = atr

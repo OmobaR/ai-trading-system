@@ -39,6 +39,13 @@ class TradingConfig:
         self.RISK_CAPITAL = self._get_float("RISK_CAPITAL", 10000.0)
         self.MAX_DRAWDOWN = self._get_float("MAX_DRAWDOWN", 0.15)
         
+        # NNFX Strategy Parameters
+        self.ADX_THRESHOLD = self._get_float("ADX_THRESHOLD", 20.0)
+        self.ATR_PERIOD = self._get_int("ATR_PERIOD", 14)
+        self.RSI_OVERBOUGHT = self._get_float("RSI_OVERBOUGHT", 70.0)
+        self.RSI_OVERSOLD = self._get_float("RSI_OVERSOLD", 30.0)
+        self.MIN_SIGNAL_CONFIDENCE = self._get_float("MIN_SIGNAL_CONFIDENCE", 0.5)
+        
         # Database
         self.DB_HOST = self._get_str("DB_HOST", "localhost")
         self.DB_PORT = self._get_int("DB_PORT", 5432)
@@ -64,6 +71,12 @@ class TradingConfig:
     def _get_float(self, key: str, default: float) -> float:
         val = self._yaml_config.get(key, os.getenv(key))
         return float(val) if val is not None else default
+    
+    def _get_bool(self, key: str, default: bool) -> bool:
+        val = self._yaml_config.get(key, os.getenv(key))
+        if val is None:
+            return default
+        return str(val).lower() in ('true', '1', 'yes')
     
     def _get_list(self, key: str, default: List[str]) -> List[str]:
         val = self._yaml_config.get(key, os.getenv(key))

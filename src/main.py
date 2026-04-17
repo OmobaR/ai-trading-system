@@ -9,7 +9,7 @@ import logging
 import signal
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import random
 import argparse
@@ -169,6 +169,16 @@ class AITradingSystem:
         self.running = True
         self.start_time = time.time()
         
+        # Start health & emergency server (non-blocking)
+        try:
+            from monitoring.health_server import start_health_server
+            risk_manager = self.components.get('risk_manager')
+            start_health_server(risk_manager=risk_manager, port=8080)
+        except ImportError as e:
+            logger.warning(f"Health server not started: {e} (install with: pip install flask)")
+        except Exception as e:
+            logger.error(f"Failed to start health server: {e}")
+        
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
         
@@ -198,12 +208,42 @@ class AITradingSystem:
             self.components['market_data'].stop()
         logger.info("AI Trading System shutdown complete")
 
+def run_backtest(symbol: str, days: int = 30):
+    """Run a quick backtest and print results."""
+    from backtest.engine import BacktestEngine
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    engine = BacktestEngine()
+    metrics = engine.run(symbol, start_date, end_date)
+    print(f"\n=== Backtest Results for {symbol} ({days} days) ===")
+    print(f"Total Trades: {metrics.total_trades}")
+    print(f"Winning Trades: {metrics.winning_trades}")
+    print(f"Losing Trades: {metrics.losing_trades}")
+    print(f"Total PnL: {metrics.total_pnl:.2f}")
+    print(f"Win Rate: {metrics.win_rate:.1%}")
+    print(f"Max Drawdown: {metrics.max_drawdown:.1%}")
+    print(f"Sharpe Ratio: {metrics.sharpe_ratio:.2f}")
+    print(f"Sortino Ratio: {getattr(metrics, 'sortino_ratio', 0):.2f}")
+    print(f"Profit Factor: {metrics.profit_factor:.2f}")
+    print(f"Total Commission: {metrics.total_commission:.2f}")
+    print(f"Total Slippage: {metrics.total_slippage:.4f}")
+
 def main():
     parser = argparse.ArgumentParser(description='AI Trading System')
-    parser.add_argument('--mode', choices=['simulate', 'live', 'historical'],
-                        help='Override config mode (simulate, live, historical)')
+    parser.add_argument('--mode', choices=['simulate', 'live', 'historical', 'backtest'],
+                        help='Override config mode (simulate, live, historical, backtest)')
+    parser.add_argument('--symbol', type=str, default='GainX 400',
+                        help='Symbol to backtest (only used with --mode backtest)')
+    parser.add_argument('--days', type=int, default=30,
+                        help='Number of days for backtest (only used with --mode backtest)')
     args = parser.parse_args()
     
+    # If backtest mode, run backtest and exit
+    if args.mode == 'backtest':
+        run_backtest(args.symbol, args.days)
+        return
+    
+    # Otherwise run the live/orchestrator system
     system = AITradingSystem(cli_mode=args.mode)
     try:
         asyncio.run(system.start())

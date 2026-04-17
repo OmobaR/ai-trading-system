@@ -4,9 +4,14 @@ Loads from .env file and optional YAML overrides.
 """
 import os
 from pathlib import Path
+import sys
 from typing import Any, Dict, Optional, List
 from dotenv import load_dotenv
 import yaml
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 load_dotenv()
 
@@ -31,8 +36,8 @@ class TradingConfig:
         ])
         
         # MT5
-        self.MT5_LOGIN = self._get_int("MT5_LOGIN", 19345714)
-        self.MT5_PASSWORD = self._get_str("MT5_PASSWORD", "bL$3Vs5)")
+        self.MT5_LOGIN = self._get_int("MT5_LOGIN", 19899463) # changed from 19345714
+        self.MT5_PASSWORD = self._get_str("MT5_PASSWORD", "]7kH!9dE") # changed from bL$3Vs5
         self.MT5_SERVER = self._get_str("MT5_SERVER", "Weltrade-Demo")
         
         # Risk

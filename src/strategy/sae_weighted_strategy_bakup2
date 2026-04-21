@@ -1,0 +1,83 @@
+# src/strategy/sae_weighted_strategy.py
+"""
+Improved Weighted SAE Strategy - Better use of SSS features
+"""
+
+from typing import Dict, Optional
+from datetime import datetime
+import logging
+
+from .base_strategy import BaseStrategy
+
+logger = logging.getLogger(__name__)
+
+class SAEWeightedStrategy(BaseStrategy):
+    def __init__(self, symbol: str = None, min_net_score: int = 30, decision_threshold: float = 0.55, **kwargs):
+        self.symbol = symbol
+        self.min_net_score = min_net_score          # Light Gate
+        self.decision_threshold = decision_threshold
+        self.signal_count = 0
+
+        logger.info(f"SAEWeightedStrategy initialized for {symbol} | min_net_score={min_net_score}")
+
+    def generate_signal(self, symbol: str, data: Dict, timestamp: datetime) -> Optional[Dict]:
+        try:
+            net_score = float(data.get('net_score', 0))
+            bias = int(data.get('bias', 0))
+            velocity = float(data.get('velocity', 0))
+            structure = float(data.get('structure_score', 0))
+            pin_bar = float(data.get('pin_bar_score', 0))
+            breakout = float(data.get('breakout_score', 0))
+            state = data.get('state', 'normal')
+
+            # Light Gate
+            if net_score < self.min_net_score:
+                return None
+
+            # Improved weighted score using more components
+            score = (
+                0.28 * (net_score / 100.0) +
+                0.22 * (1.0 if bias > 0 else 0.0) +
+                0.18 * min(velocity, 1.0) +
+                0.15 * structure +
+                0.10 * pin_bar +
+                0.07 * breakout +
+                0.10 * (1.0 if state == 'normal' else 0.5)
+            )
+
+            if score < self.decision_threshold:
+                return None
+
+            action = "BUY" if bias >= 0 else "SELL"
+            confidence = min(0.58 + score * 0.42, 0.94)
+
+            self.signal_count += 1
+
+            if self.signal_count % 100 == 0:
+                logger.info(f"SAEWeighted SIGNAL #{self.signal_count} | {action} | {symbol} | score={score:.3f} | conf={confidence:.2f}")
+
+            return {
+                'action': action,
+                'symbol': symbol,
+                'confidence': round(confidence, 2),
+                'strategy': 'sae_weighted',
+                'meta': {
+                    'net_score': round(net_score, 1),
+                    'weighted_score': round(score, 3),
+                    'velocity': round(velocity, 3),
+                    'structure': round(structure, 3),
+                    'bias': bias,
+                    'state': state
+                }
+            }
+
+        except Exception as e:
+            logger.debug(f"Weighted SAE signal error: {e}")
+            return None
+
+    def get_parameters(self) -> dict:
+        return {
+            'min_net_score': self.min_net_score,
+            'decision_threshold': self.decision_threshold,
+            'total_signals': self.signal_count
+        }

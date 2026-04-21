@@ -1,75 +1,149 @@
 ﻿# src/strategy/sae_strategy.py
 """
-Simplified but functional SAE Strategy for backtesting.
-Uses M2 when available, falls back to M5.
-Implements: Bias + NetScore (basic) + RSI(5) extremes + Divergence (RSI(5))
+Deterministic SAE Strategy - No randomness, real signal logic
 """
 
-import pandas as pd
-import numpy as np
 from typing import Dict, Optional
 from datetime import datetime
 import logging
+import numpy as np
 
 from .base_strategy import BaseStrategy
-from src.config.settings import config
 
 logger = logging.getLogger(__name__)
 
 class SAEStrategy(BaseStrategy):
-    def __init__(self, params: dict = None):
-        self.params = params or {}
-        self.min_net_score = self.params.get('min_net_score', 45)
-        self.min_m1vel_score = self.params.get('min_m1vel_score', 15)
-        self.use_divergence = self.params.get('use_divergence', True)
-        self.use_rsi_extreme = self.params.get('use_rsi_extreme', True)
-        self.rsi_oversold = self.params.get('rsi_oversold', 20)
-        self.rsi_overbought = self.params.get('rsi_overbought', 80)
-        self.divergence_lookback = self.params.get('divergence_lookback', 25)
-        self.signal_system = self.params.get('signal_system', 'both')   # 'netscore', 'div_rsi', 'both'
+    def __init__(self, symbol: str = None, window: int = 30, threshold: float = 1.0,
+                 initial_capital: float = 10000.0, risk_per_trade: float = 0.02, **kwargs):
+        
+        self.symbol = symbol
+        self.window = window
+        self.threshold = threshold
+        self.initial_capital = initial_capital
+        self.risk_per_trade = risk_per_trade
 
-    def _compute_rsi(self, prices: pd.Series, period: int = 5) -> float:
-        delta = prices.diff()
-        gain = delta.clip(lower=0).rolling(window=period).mean()
-        loss = (-delta).clip(lower=0).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi.iloc[-1] if len(rsi) > 0 and not pd.isna(rsi.iloc[-1]) else 50.0
+        self.min_net_score = kwargs.get('min_net_score', 35)
+        self.min_velocity = kwargs.get('min_velocity', 0.3)
 
-    def on_data(self, symbol: str, data: Dict, timestamp: datetime) -> Optional[Dict]:
-        """Main signal generation - called on each new bar (M2 or M5)"""
-        # For now we assume 'data' contains the latest bar. In full integration we'll load multi-TF.
-        # This is simplified version for testing.
+        self.signal_count = 0
 
-        # Placeholder: In real version we would load M2/M5, H1, H4, D1 etc.
-        # For testing, let's assume we have enough data to compute basic signals
+        # Store recent candles for structure logic
+        self.recent_closes = []
 
-        bias = 1 if "GainX" in symbol or "PainX" in symbol else 0   # simplistic bias for testing
+        logger.info(f"SAE Strategy (Deterministic) initialized for {symbol}")
 
-        # Simple NetScore proxy (will be expanded)
-        net_score = 60 + np.random.randint(-20, 30)   # placeholder
+    def generate_signal(self, symbol: str, data: Dict, timestamp: datetime) -> Optional[Dict]:
+        try:
+            close = float(data.get('close', 0))
+            open_p = float(data.get('open', close))
+            high = float(data.get('high', close))
+            low = float(data.get('low', close))
 
-        # RSI(5) on "H1" proxy
-        rsi5 = 50  # placeholder - replace with real calculation later
+            if close <= 0 or open_p <= 0:
+                return None
 
-        # Generate signal
-        signal = None
-        if bias != 0 and net_score >= self.min_net_score:
+            # =========================
+            # 1. MARKET BIAS
+            # =========================
+            if "GainX" in symbol:
+                bias = 1
+            elif "PainX" in symbol:
+                bias = -1
+            else:
+                bias = 1
+
+            # =========================
+            # 2. PRICE FEATURES
+            # =========================
+            price_change = (close - open_p) / open_p
+            momentum = price_change * 4000
+
+            candle_range = max(high - low, 1e-6)
+            candle_body = abs(close - open_p)
+
+            body_strength = candle_body / candle_range  # 0–1
+
+            # Velocity (scaled realistically)
+            velocity = abs(price_change) * 100
+
+            if velocity < self.min_velocity:
+                return None
+
+            # =========================
+            # 3. TREND STRUCTURE (NEW)
+            # =========================
+            self.recent_closes.append(close)
+
+            if len(self.recent_closes) > 5:
+                self.recent_closes.pop(0)
+
+            trend_score = 0
+
+            if len(self.recent_closes) >= 3:
+                if self.recent_closes[-1] > self.recent_closes[-2] > self.recent_closes[-3]:
+                    trend_score = 5
+                elif self.recent_closes[-1] < self.recent_closes[-2] < self.recent_closes[-3]:
+                    trend_score = -5
+
+            # =========================
+            # 4. NET SCORE (DETERMINISTIC)
+            # =========================
+            base_score = 40
+
+            net_score = (
+                base_score
+                + momentum
+                + (body_strength * 15)
+                + trend_score
+            )
+
+            # Apply threshold scaling
+            net_score *= self.threshold
+
+            # =========================
+            # 5. FINAL FILTER
+            # =========================
+            if net_score < self.min_net_score:
+                return None
+
+            # =========================
+            # 6. SIGNAL
+            # =========================
             action = "BUY" if bias > 0 else "SELL"
-            confidence = min(net_score / 100.0, 0.95)
-            signal = {
+
+            confidence = min(0.5 + (net_score / 180.0), 0.95)
+
+            self.signal_count += 1
+
+            if self.signal_count % 50 == 0:
+                logger.info(
+                    f"SIGNAL #{self.signal_count} | {action} | "
+                    f"net={net_score:.2f} | vel={velocity:.2f}"
+                )
+
+            return {
                 'action': action,
                 'symbol': symbol,
-                'confidence': confidence,
-                'strategy': 'sae',
+                'confidence': round(confidence, 2),
+                'strategy': 'sae_deterministic',
                 'meta': {
-                    'net_score': net_score,
-                    'bias': bias,
-                    'rsi5': rsi5
+                    'net_score': round(net_score, 2),
+                    'velocity': round(velocity, 2),
+                    'momentum': round(momentum, 2),
+                    'body_strength': round(body_strength, 2),
+                    'trend_score': trend_score
                 }
             }
 
-        return signal
+        except Exception as e:
+            logger.debug(f"Signal error: {e}")
+            return None
 
     def get_parameters(self) -> dict:
-        return self.params
+        return {
+            'window': self.window,
+            'threshold': self.threshold,
+            'min_net_score': self.min_net_score,
+            'min_velocity': self.min_velocity,
+            'total_signals': self.signal_count
+        }

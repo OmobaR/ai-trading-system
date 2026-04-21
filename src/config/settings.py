@@ -36,8 +36,8 @@ class TradingConfig:
         ])
         
         # MT5
-        self.MT5_LOGIN = self._get_int("MT5_LOGIN", 19899463) # changed from 19345714
-        self.MT5_PASSWORD = self._get_str("MT5_PASSWORD", "]7kH!9dE") # changed from bL$3Vs5
+        self.MT5_LOGIN = self._get_int("MT5_LOGIN", 19899463)
+        self.MT5_PASSWORD = self._get_str("MT5_PASSWORD", "]7kH!9dE")
         self.MT5_SERVER = self._get_str("MT5_SERVER", "Weltrade-Demo")
         
         # Risk
@@ -65,7 +65,11 @@ class TradingConfig:
         
         # Logging
         self.LOG_LEVEL = self._get_str("LOG_LEVEL", "INFO")
-    
+        
+        # ---------- ADD THIS LINE ----------
+        self.STRATEGIES = self._get_list("STRATEGIES", ["nnfx"])
+        # -----------------------------------
+
     def _get_str(self, key: str, default: str) -> str:
         return self._yaml_config.get(key, os.getenv(key, default))
     

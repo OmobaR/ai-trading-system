@@ -1,0 +1,126 @@
+# src/features/sss_feature_generator.py
+"""
+Enhanced SSS Feature Generator - More components for better weighted decisions
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict
+
+class SSSFeatureGenerator:
+    def __init__(self, df: pd.DataFrame):
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame")
+        
+        required = ['open', 'high', 'low', 'close']
+        if not all(col in df.columns for col in required):
+            raise ValueError(f"Missing columns. Required: {required}")
+        
+        self.df = df.copy()
+        if not isinstance(self.df.index, pd.DatetimeIndex):
+            self.df.index = pd.to_datetime(self.df.index)
+
+    def generate_features(self) -> pd.DataFrame:
+        df = self.df.copy()
+
+        df['returns'] = df['close'].pct_change()
+        df['body'] = df['close'] - df['open']
+        df['range'] = df['high'] - df['low']
+        df['range'] = df['range'].replace(0, np.nan)
+
+        # Volatility & Regime
+        df['atr_14'] = self._atr(14)
+        df['atr_50'] = self._atr(50)
+        df['state'] = self._market_state(df)
+
+        # Bias
+        df['bias'] = self._bias(df)
+
+        # Velocity (M2 proxy)
+        df['velocity'] = self._velocity(df)
+
+        # Trend strength
+        df['trend_strength'] = self._trend_strength(df)
+
+        # Structure (improved)
+        df['structure_score'] = self._structure_score(df)
+
+        # Pin-bar proxy (long wick)
+        df['pin_bar_score'] = self._pin_bar_score(df)
+
+        # Breakout strength
+        df['breakout_score'] = self._breakout_score(df)
+
+        # Aggregated Net Score (better weighted)
+        df['net_score'] = self._net_score(df)
+
+        return df.dropna()
+
+    def _atr(self, period: int) -> pd.Series:
+        hl = self.df['high'] - self.df['low']
+        hc = (self.df['high'] - self.df['close'].shift()).abs()
+        lc = (self.df['low'] - self.df['close'].shift()).abs()
+        tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+        return tr.rolling(period).mean()
+
+    def _market_state(self, df: pd.DataFrame) -> pd.Series:
+        ratio = df['atr_14'] / df['atr_50'].replace(0, np.nan)
+        return pd.Series(np.where(ratio > 1.4, 'volatile',
+                                  np.where(ratio < 0.7, 'quiet', 'normal')), index=df.index)
+
+    def _bias(self, df: pd.DataFrame) -> pd.Series:
+        sma50 = df['close'].rolling(50).mean()
+        sma200 = df['close'].rolling(200).mean()
+        bias = np.where((df['close'] > sma200) & (sma50 > sma200), 1,
+                        np.where((df['close'] < sma200) & (sma50 < sma200), -1, 0))
+        return pd.Series(bias, index=df.index)
+
+    def _velocity(self, df: pd.DataFrame) -> pd.Series:
+        body = df['body'].abs()
+        rng = df['range'].replace(0, np.nan)
+        return (body / rng).clip(0, 1).fillna(0)
+
+    def _trend_strength(self, df: pd.DataFrame) -> pd.Series:
+        return df['returns'].rolling(8).mean().fillna(0).clip(-1, 1)
+
+    def _structure_score(self, df: pd.DataFrame) -> pd.Series:
+        roll_high = df['high'].rolling(12).max()
+        roll_low = df['low'].rolling(12).min()
+        breakout_up = (df['close'] > roll_high.shift(1)).astype(int)
+        breakout_down = (df['close'] < roll_low.shift(1)).astype(int)
+        score = breakout_up + breakout_down
+        return (score.clip(0, 2) / 2.0)
+
+    def _pin_bar_score(self, df: pd.DataFrame) -> pd.Series:
+        body = df['body'].abs()
+        wick = df['range'] - body
+        pin = (wick > body * 2.0).astype(int)
+        return pin.clip(0, 1)
+
+    def _breakout_score(self, df: pd.DataFrame) -> pd.Series:
+        roll_high = df['high'].rolling(20).max()
+        roll_low = df['low'].rolling(20).min()
+        up = (df['close'] > roll_high.shift(1)).astype(int)
+        down = (df['close'] < roll_low.shift(1)).astype(int)
+        return (up + down).clip(0, 1)
+
+    def _net_score(self, df: pd.DataFrame) -> pd.Series:
+        """Improved weighted net_score"""
+        score = (
+            0.30 * df['velocity'] * 100 +
+            0.25 * df['trend_strength'] * 60 +
+            0.20 * df['structure_score'] * 100 +
+            0.15 * df['pin_bar_score'] * 80 +
+            0.10 * df['breakout_score'] * 100
+        )
+        return score.clip(0, 100)
+
+    def get_summary(self) -> Dict:
+        features = self.generate_features()
+        return {
+            'rows': len(features),
+            'avg_net_score': float(features['net_score'].mean()),
+            'bias_distribution': features['bias'].value_counts().to_dict(),
+            'state_distribution': features['state'].value_counts().to_dict(),
+            'signal_potential': float((features['net_score'] > 35).mean() * 100)
+        }

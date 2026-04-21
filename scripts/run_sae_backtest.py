@@ -14,7 +14,7 @@ import numpy as np
 import logging
 from src.events.event_store import EventStore
 from src.config.settings import config
-from src.strategies.sae_strategy import SAEStrategy
+from src.strategy.sae_strategy import SAEStrategy
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

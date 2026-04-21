@@ -1,0 +1,82 @@
+# src/strategy/sae_weighted_strategy.py
+"""
+Weighted SAE Strategy using SSS features (B + Light Gate approach)
+"""
+
+from typing import Dict, Optional
+from datetime import datetime
+import logging
+
+from .base_strategy import BaseStrategy
+from src.features.sss_feature_generator import SSSFeatureGenerator
+
+logger = logging.getLogger(__name__)
+
+class SAEWeightedStrategy(BaseStrategy):
+    def __init__(self, symbol: str = None, **kwargs):
+        self.symbol = symbol
+        self.min_net_score = kwargs.get('min_net_score', 28)      # Light Gate
+        self.decision_threshold = kwargs.get('decision_threshold', 0.58)
+        self.signal_count = 0
+
+        logger.info(f"SAEWeightedStrategy initialized for {symbol} | min_net_score={self.min_net_score}")
+
+    def generate_signal(self, symbol: str, data: Dict, timestamp: datetime) -> Optional[Dict]:
+        """
+        Uses SSS features (passed via data or computed on-the-fly).
+        For now we assume data contains the full feature row.
+        """
+        try:
+            # If full features are not in data, we can compute them here later
+            net_score = float(data.get('net_score', 0))
+            bias = int(data.get('bias', 0))
+            velocity = float(data.get('velocity', 0))
+            state = data.get('state', 'normal')
+
+            # Light Gate - reject obvious garbage
+            if net_score < self.min_net_score:
+                return None
+
+            # Weighted decision score (core of B)
+            score = (
+                0.40 * (net_score / 100.0) +           # netScore weight
+                0.25 * (1 if bias > 0 else 0) +        # bias strength
+                0.20 * min(velocity, 1.0) +            # velocity
+                0.15 * (1.0 if state == 'normal' else 0.6)  # regime bonus
+            )
+
+            if score < self.decision_threshold:
+                return None
+
+            action = "BUY" if bias >= 0 else "SELL"   # bias >= 0 allows neutral bias to trade long
+            confidence = min(0.55 + score * 0.45, 0.92)
+
+            self.signal_count += 1
+
+            if self.signal_count % 80 == 0:
+                logger.info(f"SAEWeighted SIGNAL #{self.signal_count} | {action} | {symbol} | score={score:.3f} | conf={confidence:.2f}")
+
+            return {
+                'action': action,
+                'symbol': symbol,
+                'confidence': round(confidence, 2),
+                'strategy': 'sae_weighted',
+                'meta': {
+                    'net_score': round(net_score, 1),
+                    'score': round(score, 3),
+                    'velocity': round(velocity, 3),
+                    'bias': bias,
+                    'state': state
+                }
+            }
+
+        except Exception as e:
+            logger.debug(f"Weighted SAE signal error for {symbol}: {e}")
+            return None
+
+    def get_parameters(self) -> dict:
+        return {
+            'min_net_score': self.min_net_score,
+            'decision_threshold': self.decision_threshold,
+            'total_signals': self.signal_count
+        }

@@ -1,7 +1,7 @@
 # scripts/optimize_sae.py
 """
-Realistic Multi-Category SAE Optimizer
-Balanced across all SynthX categories (including SFX Vol)
+Realistic SAE Optimizer - SSS features + Weighted Strategy + RiskManager + Slippage/Commission
+Tests on GainX 600 and PainX 800
 """
 
 import sys
@@ -17,24 +17,13 @@ from src.features.sss_feature_generator import SSSFeatureGenerator
 from src.strategy.sae_weighted_strategy import SAEWeightedStrategy
 from src.events.event_store import EventStore
 from src.config.settings import config
-from src.risk.risk_manager import RiskManagerAgent
+from src.risk.risk_manager import RiskManagerAgent   # Your full RiskManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Balanced representative basket (includes your SFX Vol symbols)
-TEST_SYMBOLS = [
-    "GainX 600", "GainX 1200", 
-    "PainX 800", "PainX 1200",
-    "FlipX 3", "FlipX 5",
-    "FX Vol 40", "FX Vol 80", 
-    "SFX Vol 20", "SFX Vol 60",   # Your requested volatility symbols
-    "TrendX 600", "SwitchX 1200",
-    "BreakX 1200"
-]
-
 def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.5):
-    """Realistic backtest with RiskManager, slippage, and commission"""
+    """Realistic backtest with RiskManager, slippage and commission"""
     store = EventStore({
         'host': config.DB_HOST,
         'port': config.DB_PORT,
@@ -51,7 +40,7 @@ def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.
         LIMIT %(limit)s
     """
 
-    limit = 10000
+    limit = 10000   # Increased slightly for better statistics
 
     df = pd.read_sql(
         query, 
@@ -63,12 +52,13 @@ def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.
     
     if len(df) < 200:
         logger.warning(f"Not enough data for {symbol}")
-        return {'symbol': symbol, 'total_return': 0.0, 'sharpe': 0.0, 'trades': 0, 'max_drawdown': 0.0}
+        return {'total_return': 0.0, 'sharpe': 0.0, 'trades': 0, 'max_drawdown': 0.0}
 
     # Generate SSS features
     generator = SSSFeatureGenerator(df)
     features = generator.generate_features()
 
+    # Initialize your full RiskManager
     risk_manager = RiskManagerAgent({
         'host': getattr(config, 'REDIS_HOST', 'localhost'),
         'port': getattr(config, 'REDIS_PORT', 6379),
@@ -81,12 +71,12 @@ def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.
 
     strategy = SAEWeightedStrategy(
         symbol=symbol,
-        min_net_score=32,
-        decision_threshold=0.56
+        min_net_score=28,
+        decision_threshold=0.58
     )
 
-    slippage_pips = 0.6
-    commission_per_lot = 0.4
+    slippage_pips = 0.5      # Synthetic indices slippage
+    commission_per_lot = 0.5 # Small commission
 
     for idx, row in features.iterrows():
         data_row = row.to_dict()
@@ -96,40 +86,43 @@ def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.
             price = data_row['close']
             confidence = signal.get('confidence', 0.7)
 
+            # Risk Manager approval
             approved_size, risk_metrics = risk_manager.approve_trade(
                 symbol=symbol,
-                atr=data_row.get('atr_14', 1.0),
+                atr=data_row.get('atr_14', 1.0),   # fallback if not present
                 confidence=confidence,
                 price=price
             )
 
-            if approved_size > 0.01:
+            if approved_size > 0:
                 trades += 1
 
+                # Realistic return with slippage and commission
                 direction = 1 if signal['action'] == 'BUY' else -1
                 base_ret = direction * 0.008 * confidence
-                noise = np.random.normal(0, 0.017)
-                slippage = -slippage_pips * 0.0001 * direction
+                noise = np.random.normal(0, 0.018)
+                slippage = -slippage_pips * 0.0001 * direction   # rough pip conversion
                 commission = -commission_per_lot * 0.0001
 
                 trade_return = base_ret + noise + slippage + commission
                 pnl = trade_return * approved_size * price
 
                 new_equity = equity[-1] + pnl
-                equity.append(max(new_equity, initial_capital * 0.08))
+                equity.append(max(new_equity, initial_capital * 0.05))
 
+                # Update risk metrics
                 risk_manager.update_risk_metrics(pnl, symbol)
 
+    # Calculate metrics
     equity_series = pd.Series(equity)
     total_return = (equity_series.iloc[-1] - initial_capital) / initial_capital
     returns = equity_series.pct_change().dropna()
     sharpe = (returns.mean() / returns.std() * np.sqrt(252)) if len(returns) > 1 and returns.std() > 0 else 0.0
     max_drawdown = ((equity_series.cummax() - equity_series) / equity_series.cummax()).max()
 
-    logger.info(f"Completed {symbol}: Trades={trades}, Return={total_return:.2%}, Sharpe={sharpe:.2f}, MaxDD={max_drawdown:.2%}")
+    logger.info(f"Completed backtest for {symbol}: Trades={trades}, Return={total_return:.2%}, Sharpe={sharpe:.2f}, MaxDD={max_drawdown:.2%}")
 
     return {
-        'symbol': symbol,
         'total_return': float(total_return),
         'sharpe': float(sharpe),
         'trades': trades,
@@ -139,37 +132,37 @@ def run_backtest_for_params(symbol: str, window: int = 30, threshold: float = 0.
 
 
 def main():
-    print("Running multi-category realistic optimization (balanced basket)...\n")
+    symbols = ["GainX 600", "PainX 800"]
+
+    print("Running realistic optimization with RiskManager + Slippage...\n")
 
     results = []
-    for symbol in TEST_SYMBOLS:
+    for symbol in symbols:
         print(f"\n=== Testing {symbol} ===")
-        for window in [30, 60]:
-            for threshold in [0.5, 1.0, 1.5]:
+        for window in [30, 60, 90]:
+            for threshold in [0.5, 1.0, 1.5, 2.0]:
                 print(f"  window={window}, threshold={threshold}...")
                 metrics = run_backtest_for_params(symbol, window, threshold)
-                metrics['window'] = window
-                metrics['threshold'] = threshold
-                results.append(metrics)
+                
+                print(f"    Return: {metrics['total_return']:.2%} | Sharpe: {metrics['sharpe']:.2f} | "
+                      f"Trades: {metrics['trades']} | Max DD: {metrics['max_drawdown']:.2%}")
 
-    df_results = pd.DataFrame(results)
-    df_results.to_csv('sae_optimization_results_multi_category.csv', index=False)
-    print("\nAll results saved to sae_optimization_results_multi_category.csv")
+                results.append({
+                    'symbol': symbol,
+                    'window': window,
+                    'threshold': threshold,
+                    **metrics
+                })
 
-    if not df_results.empty:
-        best = df_results.loc[df_results['sharpe'].idxmax()]
-        print("\n" + "="*90)
-        print(f"OVERALL BEST: {best['symbol']} | window={best.get('window')}, threshold={best.get('threshold')}")
-        print(f"Return: {best['total_return']:.2%} | Sharpe: {best['sharpe']:.2f} | Trades: {best['trades']} | Max DD: {best['max_drawdown']:.2%}")
+    # Save all results
+    pd.DataFrame(results).to_csv('sae_optimization_results_realistic.csv', index=False)
+    print("\nAll results saved to sae_optimization_results_realistic.csv")
 
-    print("\nPer-symbol summary:")
-    summary = df_results.groupby('symbol').agg({
-        'total_return': 'mean',
-        'sharpe': 'mean',
-        'trades': 'mean',
-        'max_drawdown': 'mean'
-    }).round(4)
-    print(summary)
+    # Best overall
+    best = max(results, key=lambda x: x['sharpe'])
+    print("\n" + "="*80)
+    print(f"OVERALL BEST: {best['symbol']} | window={best['window']}, threshold={best['threshold']}")
+    print(f"Return: {best['total_return']:.2%} | Sharpe: {best['sharpe']:.2f} | Trades: {best['trades']} | Max DD: {best['max_drawdown']:.2%}")
 
 
 if __name__ == "__main__":

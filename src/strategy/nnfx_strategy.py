@@ -1,4 +1,3 @@
-# src/strategy/nnfx_strategy.py
 import numpy as np
 import pandas as pd
 import logging
@@ -11,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class NNFXSignal:
-    """NNFX trading signal with confidence"""
     signal: int  # 1 for Buy, -1 for Sell, 0 for Hold
     confidence: float
     regime: str
@@ -119,10 +117,13 @@ class NNFXStrategy:
             indicators['rsi'] = talib.RSI(close, timeperiod=14).iloc[-1]
             
             # 5. Additional Confirmations
-            indicators['stoch_k'], indicators['stoch_d'] = talib.STOCH(high, low, close)[-1]
-            indicators['macd'], indicators['macd_signal'], _ = talib.MACD(close)
-            indicators['macd'] = indicators['macd'].iloc[-1] if hasattr(indicators['macd'], 'iloc') else indicators['macd'][-1]
-            indicators['macd_signal'] = indicators['macd_signal'].iloc[-1] if hasattr(indicators['macd_signal'], 'iloc') else indicators['macd_signal'][-1]
+            stoch_k, stoch_d = talib.STOCH(high, low, close)
+            indicators['stoch_k'] = stoch_k.iloc[-1] if len(stoch_k) > 0 else 50
+            indicators['stoch_d'] = stoch_d.iloc[-1] if len(stoch_d) > 0 else 50
+            
+            macd, macd_signal, _ = talib.MACD(close)
+            indicators['macd'] = macd.iloc[-1] if len(macd) > 0 else 0
+            indicators['macd_signal'] = macd_signal.iloc[-1] if len(macd_signal) > 0 else 0
             
         except Exception as e:
             logger.error(f"Error calculating NNFX indicators: {e}")
@@ -130,23 +131,24 @@ class NNFXStrategy:
             
         return indicators
 
-    def generate_signal(self, symbol: str, data: pd.DataFrame, 
-                       current_regime: Optional[str] = None) -> NNFXSignal:
+    def generate_signal(self, symbol: str, df: pd.DataFrame, timestamp: pd.Timestamp) -> Optional[Dict]:
         """
-        Generate NNFX trading signal based on current regime and indicators
+        Generate NNFX trading signal based on current regime and indicators.
+        df: DataFrame with columns open, high, low, close, volume (at least 50 rows)
+        Returns a dict compatible with the strategy engine.
         """
-        if current_regime:
-            self.current_regime = current_regime
-            
-        if len(data) < 50:
-            return NNFXSignal(0, 0.0, self.current_regime, {}, pd.Timestamp.now())
+        if df is None or len(df) < 50:
+            return None
+        
+        # Use current regime (in production you could get it from feature store)
+        regime = self.current_regime
         
         # Calculate indicators
-        indicators = self.calculate_nnfx_indicators(data)
+        indicators = self.calculate_nnfx_indicators(df)
         if not indicators:
-            return NNFXSignal(0, 0.0, self.current_regime, {}, pd.Timestamp.now())
+            return None
             
-        current_price = data['close'].iloc[-1]
+        current_price = df['close'].iloc[-1]
         hma = indicators['hma']
         adx = indicators['adx']
         rsi = indicators['rsi']
@@ -155,7 +157,7 @@ class NNFXStrategy:
         signal = 0
         confidence = 0.0
         
-        if "trending" in self.current_regime:
+        if "trending" in regime:
             # Trending markets: Use trend-following logic
             if adx > self.adx_threshold:  # Strong trend
                 if current_price > hma and rsi < self.rsi_overbought:
@@ -189,13 +191,21 @@ class NNFXStrategy:
             
             confidence = confidence * 0.6 + macd_confirm * 0.2 + stoch_confirm * 0.2
         
-        return NNFXSignal(
-            signal=signal,
-            confidence=confidence,
-            regime=self.current_regime,
-            indicators=indicators,
-            timestamp=pd.Timestamp.now()
-        )
+        if signal == 0:
+            return None
+        
+        action = "BUY" if signal == 1 else "SELL"
+        return {
+            'action': action,
+            'symbol': symbol,
+            'confidence': round(confidence, 2),
+            'strategy': 'nnfx',
+            'meta': {
+                'adx': round(indicators.get('adx', 0), 1),
+                'rsi': round(indicators.get('rsi', 0), 1),
+                'regime': regime
+            }
+        }
 
     def calculate_position_size(self, signal: NNFXSignal, account_balance: float, 
                               risk_per_trade: float = 0.02) -> Tuple[float, Dict[str, float]]:
@@ -258,12 +268,14 @@ class NNFXStrategy:
             signals = []
             for i in range(20, len(out_sample)):
                 window_data = out_sample.iloc[:i+1]
-                signal = test_strategy.generate_signal("test", window_data, "trending_high_vol")
-                signals.append(signal)
+                # Note: generate_signal now returns dict; adapt if needed
+                signal = test_strategy.generate_signal("test", window_data, pd.Timestamp.now())
+                if signal:
+                    signals.append(signal)
             
             # Calculate performance metrics (placeholder)
-            winning_trades = sum(1 for s in signals if s.confidence > 0.7 and s.signal != 0)
-            total_trades = sum(1 for s in signals if s.signal != 0)
+            winning_trades = sum(1 for s in signals if s.get('confidence', 0) > 0.7)
+            total_trades = len(signals)
             win_rate = winning_trades / total_trades if total_trades > 0 else 0
             
             results.append({
@@ -284,7 +296,7 @@ class NNFXStrategy:
         else:
             return {'avg_win_rate': 0, 'total_optimization_periods': 0}
 
-# Example usage and testing
+# Example usage and testing (kept for backward compatibility)
 if __name__ == "__main__":
     # Create sample data
     dates = pd.date_range('2024-01-01', periods=100, freq='D')
@@ -300,18 +312,13 @@ if __name__ == "__main__":
     
     # Test strategy
     strategy = NNFXStrategy()
-    signal = strategy.generate_signal("TEST", data, "trending_high_vol")
+    signal = strategy.generate_signal("TEST", data, pd.Timestamp.now())
     
     print(f"📊 NNFX Strategy Test Results:")
-    print(f"Signal: {signal.signal} ({'BUY' if signal.signal == 1 else 'SELL' if signal.signal == -1 else 'HOLD'})")
-    print(f"Confidence: {signal.confidence:.2%}")
-    print(f"Regime: {signal.regime}")
-    print(f"ADX: {signal.indicators.get('adx', 0):.2f}")
-    print(f"RSI: {signal.indicators.get('rsi', 0):.2f}")
-    print(f"HMA: {signal.indicators.get('hma', 0):.2f}")
-    
-    # Test position sizing
-    if signal.signal != 0:
-        position_size, risk_metrics = strategy.calculate_position_size(signal, 10000)
-        print(f"Position Size: {position_size:.2f}")
-        print(f"Risk Amount: ${risk_metrics['risk_amount']:.2f}")
+    if signal:
+        print(f"Signal: {signal['action']} ({signal['action']})")
+        print(f"Confidence: {signal['confidence']:.2%}")
+        print(f"ADX: {signal['meta'].get('adx', 0):.2f}")
+        print(f"RSI: {signal['meta'].get('rsi', 0):.2f}")
+    else:
+        print("No signal generated.")

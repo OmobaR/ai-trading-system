@@ -1,0 +1,137 @@
+# src/features/sss_feature_generator.py
+"""
+Signal Scoring System (SSS) Feature Generator
+Converts raw OHLCV into structured features for strategies.
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict
+
+class SSSFeatureGenerator:
+    """
+    Generates SSS-style features from OHLCV data.
+    Input: DataFrame with columns ['open', 'high', 'low', 'close', 'volume'], datetime index.
+    Output: Enhanced DataFrame with bias, state, velocity, structure, net_score, etc.
+    """
+
+    def __init__(self, df: pd.DataFrame):
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame")
+        
+        required_cols = ['open', 'high', 'low', 'close']
+        if not all(col in df.columns for col in required_cols):
+            raise ValueError(f"DataFrame must contain columns: {required_cols}")
+        
+        self.df = df.copy()
+        if not isinstance(self.df.index, pd.DatetimeIndex):
+            self.df.index = pd.to_datetime(self.df.index)
+
+    def generate_features(self) -> pd.DataFrame:
+        """Main method: compute all SSS features"""
+        df = self.df.copy()
+
+        # Basic calculations
+        df['returns'] = df['close'].pct_change()
+        df['body'] = df['close'] - df['open']
+        df['range'] = df['high'] - df['low']
+        df['range'] = df['range'].replace(0, np.nan)
+
+        # Volatility / Regime
+        df['atr_14'] = self._atr(period=14)
+        df['atr_50'] = self._atr(period=50)
+        df['state'] = self._market_state(df)
+
+        # Bias
+        df['bias'] = self._bias(df)
+
+        # Velocity (M1/M2 proxy)
+        df['velocity'] = self._velocity(df)
+
+        # Trend strength
+        df['trend_strength'] = self._trend_strength(df)
+
+        # Structure proxy
+        df['structure_score'] = self._structure_score(df)
+
+        # Aggregated Net Score
+        df['net_score'] = self._net_score(df)
+
+        # Drop NaNs
+        df = df.dropna()
+
+        return df
+
+    # ====================== FEATURE BUILDERS ======================
+
+    def _atr(self, period: int = 14) -> pd.Series:
+        high_low = self.df['high'] - self.df['low']
+        high_close = np.abs(self.df['high'] - self.df['close'].shift())
+        low_close = np.abs(self.df['low'] - self.df['close'].shift())
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        return tr.rolling(window=period).mean()
+
+    def _market_state(self, df: pd.DataFrame) -> pd.Series:
+        ratio = df['atr_14'] / df['atr_50'].replace(0, np.nan)
+        return pd.Series(np.where(ratio > 1.35, 'volatile',
+                                  np.where(ratio < 0.75, 'quiet', 'normal')), index=df.index)
+
+    def _bias(self, df: pd.DataFrame) -> pd.Series:
+        sma_fast = df['close'].rolling(50).mean()
+        sma_slow = df['close'].rolling(200).mean()
+        bias = np.where((df['close'] > sma_slow) & (sma_fast > sma_slow), 1,
+                        np.where((df['close'] < sma_slow) & (sma_fast < sma_slow), -1, 0))
+        return pd.Series(bias, index=df.index)
+
+    def _velocity(self, df: pd.DataFrame) -> pd.Series:
+        body = df['body'].abs()
+        rng = df['range'].replace(0, np.nan)
+        vel = (body / rng).clip(0, 1)
+        return vel.fillna(0)
+
+    def _trend_strength(self, df: pd.DataFrame) -> pd.Series:
+        ret = df['returns']
+        strength = ret.rolling(8).mean().fillna(0).clip(-1, 1)
+        return strength
+
+    def _structure_score(self, df: pd.DataFrame) -> pd.Series:
+        roll_high = df['high'].rolling(12).max()
+        roll_low = df['low'].rolling(12).min()
+
+        breakout_up = (df['close'] > roll_high.shift(1)).astype(int)
+        breakout_down = (df['close'] < roll_low.shift(1)).astype(int)
+
+        body = df['body'].abs()
+        wick = df['range'] - body
+        pin = (wick > body * 1.8).astype(int)
+
+        score = breakout_up + breakout_down + pin
+        return (score.clip(0, 3) / 3.0)   # normalize 0-1
+
+    def _net_score(self, df: pd.DataFrame) -> pd.Series:
+        """Weighted net score"""
+        score = (
+            0.35 * df['velocity'] * 100 +
+            0.30 * df['trend_strength'] * 50 +
+            0.25 * df['structure_score'] * 100 +
+            0.10 * np.where(df['bias'] != 0, 50, 0)
+        )
+        return score.clip(0, 100)
+
+    def get_summary(self) -> Dict:
+        """Quick stats"""
+        features = self.generate_features()
+        return {
+            'rows': len(features),
+            'avg_net_score': float(features['net_score'].mean()),
+            'bias_distribution': features['bias'].value_counts().to_dict(),
+            'state_distribution': features['state'].value_counts().to_dict(),
+            'signal_potential': float((features['net_score'] > 40).mean() * 100)
+        }
+
+
+# Quick test when run directly
+if __name__ == "__main__":
+    print("Running SSSFeatureGenerator self-test...")
+    # You can add a small test here later if needed
+    print("✅ Class loaded successfully")

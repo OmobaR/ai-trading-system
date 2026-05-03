@@ -1,0 +1,14 @@
+{
+  "agent": "strategy_agent",
+  "phase": "strategy",
+  "version": 1,
+  "parent_artifact": "filter_filter_agent_0f09f54b",
+  "created_at": "2026-05-01T01:08:44.838485",
+  "status": "pending",
+  "checksum": "cd9f49e2aad1749b",
+  "tags": [
+    "signals",
+    "strategy"
+  ],
+  "notes": "Generated 17000 signals: {'buy': 0, 'sell': 0, 'hold': 17000}"
+}

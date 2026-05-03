@@ -1,0 +1,14 @@
+{
+  "agent": "filter_agent",
+  "phase": "filter",
+  "version": 1,
+  "parent_artifact": "regime_regime_agent_38526c42",
+  "created_at": "2026-05-01T01:08:26.354486",
+  "status": "pending",
+  "checksum": "13cc79ded92026ce",
+  "tags": [
+    "filtered",
+    "eligible"
+  ],
+  "notes": "Filtered from 17000 to 17000 rows"
+}

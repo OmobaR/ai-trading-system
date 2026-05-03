@@ -1,0 +1,14 @@
+{
+  "agent": "governance_agent",
+  "phase": "governance",
+  "version": 1,
+  "parent_artifact": "features_feature_agent_5ebc5831",
+  "created_at": "2026-05-01T01:08:03.517049",
+  "status": "pending",
+  "checksum": "f24dba8ecd9a28b7",
+  "tags": [
+    "governance",
+    "approved"
+  ],
+  "notes": "Approved 22 features. Removed 8. SAE recommended: True. EMA state representation OK."
+}

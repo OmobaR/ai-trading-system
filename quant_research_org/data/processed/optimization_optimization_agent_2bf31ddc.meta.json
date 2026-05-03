@@ -1,0 +1,14 @@
+{
+  "agent": "optimization_agent",
+  "phase": "optimization",
+  "version": 1,
+  "parent_artifact": "validation_validation_agent_1f26ed60",
+  "created_at": "2026-05-01T01:08:48.264640",
+  "status": "pending",
+  "checksum": "b7d942e997a8b9cb",
+  "tags": [
+    "optimization",
+    "parameters"
+  ],
+  "notes": "Best Sharpe in search: 1.20"
+}

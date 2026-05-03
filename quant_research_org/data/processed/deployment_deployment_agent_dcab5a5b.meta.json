@@ -1,0 +1,15 @@
+{
+  "agent": "deployment_agent",
+  "phase": "deployment",
+  "version": 1,
+  "parent_artifact": "optimization_optimization_agent_2bf31ddc",
+  "created_at": "2026-05-01T01:08:48.278132",
+  "status": "pending",
+  "checksum": "f8ced86518f77415",
+  "tags": [
+    "mql5",
+    "deployment",
+    "mt5"
+  ],
+  "notes": "MQL5 EA written to output/mql5/AutoGen_RegimeEA_v1.mq5"
+}

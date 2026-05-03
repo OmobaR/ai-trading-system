@@ -1,0 +1,15 @@
+{
+  "agent": "feature_agent",
+  "phase": "features",
+  "version": 1,
+  "parent_artifact": "data_data_agent_9b70d086",
+  "created_at": "2026-05-01T01:07:12.256057",
+  "status": "approved",
+  "checksum": "6c966e792820f6da",
+  "tags": [
+    "features",
+    "proposed",
+    "ema_stack"
+  ],
+  "notes": "Proposed 30 features across 3 layers"
+}

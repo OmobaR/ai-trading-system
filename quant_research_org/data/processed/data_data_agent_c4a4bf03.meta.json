@@ -1,0 +1,14 @@
+{
+  "agent": "data_agent",
+  "phase": "data",
+  "version": 1,
+  "parent_artifact": null,
+  "created_at": "2026-05-01T01:07:53.664801",
+  "status": "pending",
+  "checksum": "67554752a64041b1",
+  "tags": [
+    "ohlcv",
+    "clean"
+  ],
+  "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+}

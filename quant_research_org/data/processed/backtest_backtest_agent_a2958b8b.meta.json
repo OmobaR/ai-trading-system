@@ -1,0 +1,14 @@
+{
+  "agent": "backtest_agent",
+  "phase": "backtest",
+  "version": 1,
+  "parent_artifact": "risk_risk_agent_3d131c81",
+  "created_at": "2026-05-01T01:08:31.806395",
+  "status": "pending",
+  "checksum": "e57d8a150bdfd8da",
+  "tags": [
+    "backtest",
+    "simulation"
+  ],
+  "notes": "Sharpe=0.00, WinRate=0.0%, DD=0.0%"
+}

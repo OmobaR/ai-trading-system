@@ -1,0 +1,14 @@
+{
+  "agent": "validation_agent",
+  "phase": "validation",
+  "version": 1,
+  "parent_artifact": "backtest_backtest_agent_db732409",
+  "created_at": "2026-05-01T01:08:48.261918",
+  "status": "pending",
+  "checksum": "631917383c2dfac3",
+  "tags": [
+    "validation",
+    "sanity_check"
+  ],
+  "notes": "PASS"
+}

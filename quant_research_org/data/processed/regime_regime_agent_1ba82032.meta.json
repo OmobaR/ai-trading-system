@@ -1,0 +1,14 @@
+{
+  "agent": "regime_agent",
+  "phase": "regime",
+  "version": 1,
+  "parent_artifact": "governance_governance_agent_036e457e",
+  "created_at": "2026-05-01T01:08:42.569513",
+  "status": "pending",
+  "checksum": "d48f46ad547d1977",
+  "tags": [
+    "regime",
+    "classification"
+  ],
+  "notes": "Regimes: {'transition': 0.266, 'range': 0.34, 'weak_trend': 0.395}"
+}

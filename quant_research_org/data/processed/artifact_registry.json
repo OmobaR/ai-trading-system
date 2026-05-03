@@ -1,0 +1,693 @@
+{
+  "data_data_agent_9b70d086": {
+    "artifact_id": "data_data_agent_9b70d086",
+    "name": "clean_ohlcv_dataset",
+    "metadata": {
+      "agent": "data_agent",
+      "phase": "data",
+      "version": 1,
+      "parent_artifact": null,
+      "created_at": "2026-05-01T01:07:11.238698",
+      "status": "pending",
+      "checksum": "9b85878c93595641",
+      "tags": [
+        "ohlcv",
+        "clean"
+      ],
+      "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+    },
+    "checksum": "9b85878c93595641"
+  },
+  "features_feature_agent_d6712ff7": {
+    "artifact_id": "features_feature_agent_d6712ff7",
+    "name": "proposed_feature_set",
+    "metadata": {
+      "agent": "feature_agent",
+      "phase": "features",
+      "version": 1,
+      "parent_artifact": "data_data_agent_9b70d086",
+      "created_at": "2026-05-01T01:07:12.256057",
+      "status": "approved",
+      "checksum": "6c966e792820f6da",
+      "tags": [
+        "features",
+        "proposed",
+        "ema_stack"
+      ],
+      "notes": "Proposed 30 features across 3 layers"
+    },
+    "checksum": "6c966e792820f6da"
+  },
+  "governance_governance_agent_0ab5a354": {
+    "artifact_id": "governance_governance_agent_0ab5a354",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_d6712ff7",
+      "created_at": "2026-05-01T01:07:12.338996",
+      "status": "pending",
+      "checksum": "f7eec3e9073cddf7",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 21 features. Removed 9. SAE recommended: True. EMA state representation OK."
+    },
+    "checksum": "f7eec3e9073cddf7"
+  },
+  "governance_governance_agent_febb3edd": {
+    "artifact_id": "governance_governance_agent_febb3edd",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_d6712ff7",
+      "created_at": "2026-05-01T01:07:12.416291",
+      "status": "pending",
+      "checksum": "f7eec3e9073cddf7",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 21 features. Removed 9. SAE recommended: True. EMA state representation OK."
+    },
+    "checksum": "f7eec3e9073cddf7"
+  },
+  "data_data_agent_c4a4bf03": {
+    "artifact_id": "data_data_agent_c4a4bf03",
+    "name": "clean_ohlcv_dataset",
+    "metadata": {
+      "agent": "data_agent",
+      "phase": "data",
+      "version": 1,
+      "parent_artifact": null,
+      "created_at": "2026-05-01T01:07:53.664801",
+      "status": "pending",
+      "checksum": "67554752a64041b1",
+      "tags": [
+        "ohlcv",
+        "clean"
+      ],
+      "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+    },
+    "checksum": "67554752a64041b1"
+  },
+  "features_feature_agent_0a7acf26": {
+    "artifact_id": "features_feature_agent_0a7acf26",
+    "name": "proposed_feature_set",
+    "metadata": {
+      "agent": "feature_agent",
+      "phase": "features",
+      "version": 1,
+      "parent_artifact": "data_data_agent_c4a4bf03",
+      "created_at": "2026-05-01T01:07:54.206916",
+      "status": "approved",
+      "checksum": "5d330fd2f56fa1bc",
+      "tags": [
+        "features",
+        "proposed",
+        "ema_stack"
+      ],
+      "notes": "Proposed 30 features across 3 layers"
+    },
+    "checksum": "5d330fd2f56fa1bc"
+  },
+  "governance_governance_agent_13938efb": {
+    "artifact_id": "governance_governance_agent_13938efb",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_0a7acf26",
+      "created_at": "2026-05-01T01:07:54.289697",
+      "status": "pending",
+      "checksum": "70167d21804b68ff",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 20 features. Removed 10. SAE recommended: False. EMA state representation OK."
+    },
+    "checksum": "70167d21804b68ff"
+  },
+  "regime_regime_agent_f321a28d": {
+    "artifact_id": "regime_regime_agent_f321a28d",
+    "name": "regime_labels",
+    "metadata": {
+      "agent": "regime_agent",
+      "phase": "regime",
+      "version": 1,
+      "parent_artifact": "governance_governance_agent_13938efb",
+      "created_at": "2026-05-01T01:07:57.518037",
+      "status": "pending",
+      "checksum": "564bd305af53438d",
+      "tags": [
+        "regime",
+        "classification"
+      ],
+      "notes": "Regimes: {'transition': 0.272, 'range': 0.338, 'weak_trend': 0.39}"
+    },
+    "checksum": "564bd305af53438d"
+  },
+  "data_data_agent_94c4c99a": {
+    "artifact_id": "data_data_agent_94c4c99a",
+    "name": "clean_ohlcv_dataset",
+    "metadata": {
+      "agent": "data_agent",
+      "phase": "data",
+      "version": 1,
+      "parent_artifact": null,
+      "created_at": "2026-05-01T01:08:02.877943",
+      "status": "pending",
+      "checksum": "f977259e98539de4",
+      "tags": [
+        "ohlcv",
+        "clean"
+      ],
+      "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+    },
+    "checksum": "f977259e98539de4"
+  },
+  "features_feature_agent_5ebc5831": {
+    "artifact_id": "features_feature_agent_5ebc5831",
+    "name": "proposed_feature_set",
+    "metadata": {
+      "agent": "feature_agent",
+      "phase": "features",
+      "version": 1,
+      "parent_artifact": "data_data_agent_94c4c99a",
+      "created_at": "2026-05-01T01:08:03.433421",
+      "status": "approved",
+      "checksum": "8e0d32bd42cd7494",
+      "tags": [
+        "features",
+        "proposed",
+        "ema_stack"
+      ],
+      "notes": "Proposed 30 features across 3 layers"
+    },
+    "checksum": "8e0d32bd42cd7494"
+  },
+  "governance_governance_agent_b387c9d7": {
+    "artifact_id": "governance_governance_agent_b387c9d7",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_5ebc5831",
+      "created_at": "2026-05-01T01:08:03.517049",
+      "status": "pending",
+      "checksum": "f24dba8ecd9a28b7",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 22 features. Removed 8. SAE recommended: True. EMA state representation OK."
+    },
+    "checksum": "f24dba8ecd9a28b7"
+  },
+  "regime_regime_agent_c904596d": {
+    "artifact_id": "regime_regime_agent_c904596d",
+    "name": "regime_labels",
+    "metadata": {
+      "agent": "regime_agent",
+      "phase": "regime",
+      "version": 1,
+      "parent_artifact": "governance_governance_agent_b387c9d7",
+      "created_at": "2026-05-01T01:08:06.654927",
+      "status": "pending",
+      "checksum": "22270d6491de2d8d",
+      "tags": [
+        "regime",
+        "classification"
+      ],
+      "notes": "Regimes: {'transition': 0.271, 'range': 0.339, 'weak_trend': 0.39}"
+    },
+    "checksum": "22270d6491de2d8d"
+  },
+  "data_data_agent_0b19c46c": {
+    "artifact_id": "data_data_agent_0b19c46c",
+    "name": "clean_ohlcv_dataset",
+    "metadata": {
+      "agent": "data_agent",
+      "phase": "data",
+      "version": 1,
+      "parent_artifact": null,
+      "created_at": "2026-05-01T01:08:22.447851",
+      "status": "pending",
+      "checksum": "28bec532372da895",
+      "tags": [
+        "ohlcv",
+        "clean"
+      ],
+      "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+    },
+    "checksum": "28bec532372da895"
+  },
+  "features_feature_agent_f39aecdd": {
+    "artifact_id": "features_feature_agent_f39aecdd",
+    "name": "proposed_feature_set",
+    "metadata": {
+      "agent": "feature_agent",
+      "phase": "features",
+      "version": 1,
+      "parent_artifact": "data_data_agent_0b19c46c",
+      "created_at": "2026-05-01T01:08:22.998766",
+      "status": "approved",
+      "checksum": "ab797aacdcbacf78",
+      "tags": [
+        "features",
+        "proposed",
+        "ema_stack"
+      ],
+      "notes": "Proposed 30 features across 3 layers"
+    },
+    "checksum": "ab797aacdcbacf78"
+  },
+  "governance_governance_agent_3489a4ee": {
+    "artifact_id": "governance_governance_agent_3489a4ee",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_f39aecdd",
+      "created_at": "2026-05-01T01:08:23.085956",
+      "status": "pending",
+      "checksum": "c9c54aa5d16f0fbf",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 21 features. Removed 9. SAE recommended: True. EMA state representation OK."
+    },
+    "checksum": "c9c54aa5d16f0fbf"
+  },
+  "regime_regime_agent_38526c42": {
+    "artifact_id": "regime_regime_agent_38526c42",
+    "name": "regime_labels",
+    "metadata": {
+      "agent": "regime_agent",
+      "phase": "regime",
+      "version": 1,
+      "parent_artifact": "governance_governance_agent_3489a4ee",
+      "created_at": "2026-05-01T01:08:26.207272",
+      "status": "pending",
+      "checksum": "86b6050873443eca",
+      "tags": [
+        "regime",
+        "classification"
+      ],
+      "notes": "Regimes: {'transition': 0.274, 'range': 0.338, 'weak_trend': 0.388}"
+    },
+    "checksum": "86b6050873443eca"
+  },
+  "filter_filter_agent_343b338e": {
+    "artifact_id": "filter_filter_agent_343b338e",
+    "name": "filtered_data",
+    "metadata": {
+      "agent": "filter_agent",
+      "phase": "filter",
+      "version": 1,
+      "parent_artifact": "regime_regime_agent_38526c42",
+      "created_at": "2026-05-01T01:08:26.354486",
+      "status": "pending",
+      "checksum": "13cc79ded92026ce",
+      "tags": [
+        "filtered",
+        "eligible"
+      ],
+      "notes": "Filtered from 17000 to 17000 rows"
+    },
+    "checksum": "13cc79ded92026ce"
+  },
+  "strategy_strategy_agent_84ed5652": {
+    "artifact_id": "strategy_strategy_agent_84ed5652",
+    "name": "strategy_signals",
+    "metadata": {
+      "agent": "strategy_agent",
+      "phase": "strategy",
+      "version": 1,
+      "parent_artifact": "filter_filter_agent_343b338e",
+      "created_at": "2026-05-01T01:08:28.454495",
+      "status": "pending",
+      "checksum": "67d28feb6d74e56d",
+      "tags": [
+        "signals",
+        "strategy"
+      ],
+      "notes": "Generated 17000 signals: {'buy': 0, 'sell': 0, 'hold': 17000}"
+    },
+    "checksum": "67d28feb6d74e56d"
+  },
+  "risk_risk_agent_3d131c81": {
+    "artifact_id": "risk_risk_agent_3d131c81",
+    "name": "risk_adjusted_orders",
+    "metadata": {
+      "agent": "risk_agent",
+      "phase": "risk",
+      "version": 1,
+      "parent_artifact": "strategy_strategy_agent_84ed5652",
+      "created_at": "2026-05-01T01:08:31.779179",
+      "status": "pending",
+      "checksum": "9f56e4ccd366e6d3",
+      "tags": [
+        "risk",
+        "sizing"
+      ],
+      "notes": "Approved orders: 0/17000"
+    },
+    "checksum": "9f56e4ccd366e6d3"
+  },
+  "backtest_backtest_agent_a2958b8b": {
+    "artifact_id": "backtest_backtest_agent_a2958b8b",
+    "name": "backtest_report",
+    "metadata": {
+      "agent": "backtest_agent",
+      "phase": "backtest",
+      "version": 1,
+      "parent_artifact": "risk_risk_agent_3d131c81",
+      "created_at": "2026-05-01T01:08:31.806395",
+      "status": "pending",
+      "checksum": "e57d8a150bdfd8da",
+      "tags": [
+        "backtest",
+        "simulation"
+      ],
+      "notes": "Sharpe=0.00, WinRate=0.0%, DD=0.0%"
+    },
+    "checksum": "e57d8a150bdfd8da"
+  },
+  "validation_validation_agent_546258e7": {
+    "artifact_id": "validation_validation_agent_546258e7",
+    "name": "validation_report",
+    "metadata": {
+      "agent": "validation_agent",
+      "phase": "validation",
+      "version": 1,
+      "parent_artifact": "backtest_backtest_agent_a2958b8b",
+      "created_at": "2026-05-01T01:08:31.808975",
+      "status": "pending",
+      "checksum": "ff8ddd4711b5535b",
+      "tags": [
+        "validation",
+        "sanity_check"
+      ],
+      "notes": "PASS"
+    },
+    "checksum": "ff8ddd4711b5535b"
+  },
+  "optimization_optimization_agent_391605a6": {
+    "artifact_id": "optimization_optimization_agent_391605a6",
+    "name": "optimized_parameters",
+    "metadata": {
+      "agent": "optimization_agent",
+      "phase": "optimization",
+      "version": 1,
+      "parent_artifact": "validation_validation_agent_546258e7",
+      "created_at": "2026-05-01T01:08:31.811372",
+      "status": "pending",
+      "checksum": "b7d942e997a8b9cb",
+      "tags": [
+        "optimization",
+        "parameters"
+      ],
+      "notes": "Best Sharpe in search: 1.20"
+    },
+    "checksum": "b7d942e997a8b9cb"
+  },
+  "deployment_deployment_agent_12741ecd": {
+    "artifact_id": "deployment_deployment_agent_12741ecd",
+    "name": "mql5_ea_template",
+    "metadata": {
+      "agent": "deployment_agent",
+      "phase": "deployment",
+      "version": 1,
+      "parent_artifact": "optimization_optimization_agent_391605a6",
+      "created_at": "2026-05-01T01:08:31.814181",
+      "status": "pending",
+      "checksum": "f8ced86518f77415",
+      "tags": [
+        "mql5",
+        "deployment",
+        "mt5"
+      ],
+      "notes": "MQL5 EA written to output/mql5/AutoGen_RegimeEA_v1.mq5"
+    },
+    "checksum": "f8ced86518f77415"
+  },
+  "feedback_feedback_agent_8b0f011c": {
+    "artifact_id": "feedback_feedback_agent_8b0f011c",
+    "name": "feedback_improvement_plan",
+    "metadata": {
+      "agent": "feedback_agent",
+      "phase": "feedback",
+      "version": 1,
+      "parent_artifact": "deployment_deployment_agent_12741ecd",
+      "created_at": "2026-05-01T01:08:31.816434",
+      "status": "pending",
+      "checksum": "21184466ec9b0f09",
+      "tags": [
+        "feedback",
+        "improvement"
+      ],
+      "notes": "1 improvement recommendations generated"
+    },
+    "checksum": "21184466ec9b0f09"
+  },
+  "data_data_agent_709cc382": {
+    "artifact_id": "data_data_agent_709cc382",
+    "name": "clean_ohlcv_dataset",
+    "metadata": {
+      "agent": "data_agent",
+      "phase": "data",
+      "version": 1,
+      "parent_artifact": null,
+      "created_at": "2026-05-01T01:08:38.819199",
+      "status": "pending",
+      "checksum": "0a3b233df0b554d2",
+      "tags": [
+        "ohlcv",
+        "clean"
+      ],
+      "notes": "Symbols: 34, Rows: 17000, Period: 2024-01-01 00:00:00 to 2024-01-21 19:00:00"
+    },
+    "checksum": "0a3b233df0b554d2"
+  },
+  "features_feature_agent_1418aa21": {
+    "artifact_id": "features_feature_agent_1418aa21",
+    "name": "proposed_feature_set",
+    "metadata": {
+      "agent": "feature_agent",
+      "phase": "features",
+      "version": 1,
+      "parent_artifact": "data_data_agent_709cc382",
+      "created_at": "2026-05-01T01:08:39.357670",
+      "status": "approved",
+      "checksum": "3d89a3a4c3159859",
+      "tags": [
+        "features",
+        "proposed",
+        "ema_stack"
+      ],
+      "notes": "Proposed 30 features across 3 layers"
+    },
+    "checksum": "3d89a3a4c3159859"
+  },
+  "governance_governance_agent_036e457e": {
+    "artifact_id": "governance_governance_agent_036e457e",
+    "name": "governance_approved_feature_schema",
+    "metadata": {
+      "agent": "governance_agent",
+      "phase": "governance",
+      "version": 1,
+      "parent_artifact": "features_feature_agent_1418aa21",
+      "created_at": "2026-05-01T01:08:39.440764",
+      "status": "pending",
+      "checksum": "e50f9a7449202341",
+      "tags": [
+        "governance",
+        "approved"
+      ],
+      "notes": "Approved 20 features. Removed 10. SAE recommended: False. EMA state representation OK."
+    },
+    "checksum": "e50f9a7449202341"
+  },
+  "regime_regime_agent_1ba82032": {
+    "artifact_id": "regime_regime_agent_1ba82032",
+    "name": "regime_labels",
+    "metadata": {
+      "agent": "regime_agent",
+      "phase": "regime",
+      "version": 1,
+      "parent_artifact": "governance_governance_agent_036e457e",
+      "created_at": "2026-05-01T01:08:42.569513",
+      "status": "pending",
+      "checksum": "d48f46ad547d1977",
+      "tags": [
+        "regime",
+        "classification"
+      ],
+      "notes": "Regimes: {'transition': 0.266, 'range': 0.34, 'weak_trend': 0.395}"
+    },
+    "checksum": "d48f46ad547d1977"
+  },
+  "filter_filter_agent_0f09f54b": {
+    "artifact_id": "filter_filter_agent_0f09f54b",
+    "name": "filtered_data",
+    "metadata": {
+      "agent": "filter_agent",
+      "phase": "filter",
+      "version": 1,
+      "parent_artifact": "regime_regime_agent_1ba82032",
+      "created_at": "2026-05-01T01:08:42.723697",
+      "status": "pending",
+      "checksum": "c26c624607ea2246",
+      "tags": [
+        "filtered",
+        "eligible"
+      ],
+      "notes": "Filtered from 17000 to 17000 rows"
+    },
+    "checksum": "c26c624607ea2246"
+  },
+  "strategy_strategy_agent_4258843e": {
+    "artifact_id": "strategy_strategy_agent_4258843e",
+    "name": "strategy_signals",
+    "metadata": {
+      "agent": "strategy_agent",
+      "phase": "strategy",
+      "version": 1,
+      "parent_artifact": "filter_filter_agent_0f09f54b",
+      "created_at": "2026-05-01T01:08:44.838485",
+      "status": "pending",
+      "checksum": "cd9f49e2aad1749b",
+      "tags": [
+        "signals",
+        "strategy"
+      ],
+      "notes": "Generated 17000 signals: {'buy': 0, 'sell': 0, 'hold': 17000}"
+    },
+    "checksum": "cd9f49e2aad1749b"
+  },
+  "risk_risk_agent_2e5afe01": {
+    "artifact_id": "risk_risk_agent_2e5afe01",
+    "name": "risk_adjusted_orders",
+    "metadata": {
+      "agent": "risk_agent",
+      "phase": "risk",
+      "version": 1,
+      "parent_artifact": "strategy_strategy_agent_4258843e",
+      "created_at": "2026-05-01T01:08:48.233410",
+      "status": "pending",
+      "checksum": "aae70e345894dfe4",
+      "tags": [
+        "risk",
+        "sizing"
+      ],
+      "notes": "Approved orders: 0/17000"
+    },
+    "checksum": "aae70e345894dfe4"
+  },
+  "backtest_backtest_agent_db732409": {
+    "artifact_id": "backtest_backtest_agent_db732409",
+    "name": "backtest_report",
+    "metadata": {
+      "agent": "backtest_agent",
+      "phase": "backtest",
+      "version": 1,
+      "parent_artifact": "risk_risk_agent_2e5afe01",
+      "created_at": "2026-05-01T01:08:48.259006",
+      "status": "pending",
+      "checksum": "e57d8a150bdfd8da",
+      "tags": [
+        "backtest",
+        "simulation"
+      ],
+      "notes": "Sharpe=0.00, WinRate=0.0%, DD=0.0%"
+    },
+    "checksum": "e57d8a150bdfd8da"
+  },
+  "validation_validation_agent_1f26ed60": {
+    "artifact_id": "validation_validation_agent_1f26ed60",
+    "name": "validation_report",
+    "metadata": {
+      "agent": "validation_agent",
+      "phase": "validation",
+      "version": 1,
+      "parent_artifact": "backtest_backtest_agent_db732409",
+      "created_at": "2026-05-01T01:08:48.261918",
+      "status": "pending",
+      "checksum": "631917383c2dfac3",
+      "tags": [
+        "validation",
+        "sanity_check"
+      ],
+      "notes": "PASS"
+    },
+    "checksum": "631917383c2dfac3"
+  },
+  "optimization_optimization_agent_2bf31ddc": {
+    "artifact_id": "optimization_optimization_agent_2bf31ddc",
+    "name": "optimized_parameters",
+    "metadata": {
+      "agent": "optimization_agent",
+      "phase": "optimization",
+      "version": 1,
+      "parent_artifact": "validation_validation_agent_1f26ed60",
+      "created_at": "2026-05-01T01:08:48.264640",
+      "status": "pending",
+      "checksum": "b7d942e997a8b9cb",
+      "tags": [
+        "optimization",
+        "parameters"
+      ],
+      "notes": "Best Sharpe in search: 1.20"
+    },
+    "checksum": "b7d942e997a8b9cb"
+  },
+  "deployment_deployment_agent_dcab5a5b": {
+    "artifact_id": "deployment_deployment_agent_dcab5a5b",
+    "name": "mql5_ea_template",
+    "metadata": {
+      "agent": "deployment_agent",
+      "phase": "deployment",
+      "version": 1,
+      "parent_artifact": "optimization_optimization_agent_2bf31ddc",
+      "created_at": "2026-05-01T01:08:48.278132",
+      "status": "pending",
+      "checksum": "f8ced86518f77415",
+      "tags": [
+        "mql5",
+        "deployment",
+        "mt5"
+      ],
+      "notes": "MQL5 EA written to output/mql5/AutoGen_RegimeEA_v1.mq5"
+    },
+    "checksum": "f8ced86518f77415"
+  },
+  "feedback_feedback_agent_418dca9f": {
+    "artifact_id": "feedback_feedback_agent_418dca9f",
+    "name": "feedback_improvement_plan",
+    "metadata": {
+      "agent": "feedback_agent",
+      "phase": "feedback",
+      "version": 1,
+      "parent_artifact": "deployment_deployment_agent_dcab5a5b",
+      "created_at": "2026-05-01T01:08:48.280930",
+      "status": "pending",
+      "checksum": "21184466ec9b0f09",
+      "tags": [
+        "feedback",
+        "improvement"
+      ],
+      "notes": "1 improvement recommendations generated"
+    },
+    "checksum": "21184466ec9b0f09"
+  }
+}

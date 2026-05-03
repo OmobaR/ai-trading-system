@@ -1,0 +1,14 @@
+{
+  "agent": "risk_agent",
+  "phase": "risk",
+  "version": 1,
+  "parent_artifact": "strategy_strategy_agent_4258843e",
+  "created_at": "2026-05-01T01:08:48.233410",
+  "status": "pending",
+  "checksum": "aae70e345894dfe4",
+  "tags": [
+    "risk",
+    "sizing"
+  ],
+  "notes": "Approved orders: 0/17000"
+}

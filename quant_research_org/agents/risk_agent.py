@@ -1,5 +1,5 @@
 """
-Risk Agent (Phase 6)
+Risk Agent (Phase 6) – per symbol, file‑based, memory‑safe.
 Owns the constraint: CAPITAL PRESERVATION.
 - Uses regime confidence and liquidity proximity for dynamic sizing
 - Position sizing: volatility-adjusted, confidence-scaled
@@ -9,6 +9,7 @@ Owns the constraint: CAPITAL PRESERVATION.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
@@ -54,6 +55,8 @@ class RiskAgent(BaseAgent):
         self.max_drawdown_tier2 = max_drawdown_tier2
         self.hard_stop_drawdown = hard_stop_drawdown
         self.current_drawdown = 0.0
+        self.output_dir = Path("data/processed/risk")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
         logger.info("[RiskAgent] Applying risk management...")
@@ -62,62 +65,51 @@ class RiskAgent(BaseAgent):
             if not input_artifact_id:
                 return AgentResult(success=False, message="RiskAgent requires signal artifact")
 
-            artifact = self.store.load(input_artifact_id)
-            bundle = artifact.data
-            signal_df = bundle.get("signal_df") if isinstance(bundle, dict) else bundle
-            if not isinstance(signal_df, pd.DataFrame):
-                return AgentResult(success=False, message="RiskAgent expects signal DataFrame")
+            strategy_artifact = self.store.load(input_artifact_id)
+            file_paths = strategy_artifact.data.get("file_paths", [])
+            if not file_paths:
+                return AgentResult(success=False, message="No signal files found")
 
-            # Merge with regime data to get confidence and liquidity
-            # For simplicity, we look up the filtered data via parent chain
-            parent_id = artifact.metadata.parent_artifact
-            filtered_df = None
-            if parent_id:
-                try:
-                    parent_art = self.store.load(parent_id)
-                    fbundle = parent_art.data
-                    filtered_df = fbundle.get("filtered_df") if isinstance(fbundle, dict) else None
-                except Exception:
-                    filtered_df = None
+            risk_files = []
+            total_approved = 0
+            total_signals = 0
 
-            risk_frames = []
-            for symbol, grp in signal_df.groupby("symbol"):
-                grp = grp.sort_values("timestamp").copy()
-                regime_lookup = None
-                if filtered_df is not None and "symbol" in filtered_df.columns:
-                    regime_lookup = filtered_df[filtered_df["symbol"] == symbol]
-                risked = self._apply_risk(grp, regime_lookup)
-                risk_frames.append(risked)
-
-            risk_df = pd.concat(risk_frames, ignore_index=True) if risk_frames else pd.DataFrame()
-
-            diagnostics = self._summarize_risk(risk_df)
+            for file_path in file_paths:
+                symbol = Path(file_path).stem.replace("_signals", "")
+                logger.info(f"  Risk sizing for {symbol}...")
+                df = pd.read_parquet(file_path)
+                risked_df = self._apply_risk(df)
+                out_path = self.output_dir / f"{symbol}_risk.parquet"
+                risked_df.to_parquet(out_path, index=False)
+                risk_files.append(str(out_path))
+                total_approved += int(risked_df["approved"].sum())
+                total_signals += len(risked_df)
 
             artifact_id = self._produce_artifact(
                 name="risk_adjusted_orders",
                 data={
-                    "risk_df": risk_df,
+                    "file_paths": risk_files,
                     "capital": self.capital,
                     "drawdown": self.current_drawdown,
                 },
                 phase="risk",
                 parent_artifact=input_artifact_id,
                 tags=["risk", "sizing"],
-                notes=f"Approved orders: {diagnostics['approved_count']}/{diagnostics['total_signals']}",
+                notes=f"Approved orders: {total_approved}/{total_signals}",
             )
 
             return AgentResult(
                 success=True,
                 artifact_id=artifact_id,
-                message=f"Risk sizing complete. {diagnostics['summary']}",
-                diagnostics=diagnostics,
+                message=f"Risk sizing complete. Approved {total_approved}/{total_signals} trades.",
+                diagnostics={"approved_count": total_approved, "total_signals": total_signals},
             )
 
         except Exception as e:
             logger.exception("[RiskAgent] Fatal error")
             return AgentResult(success=False, message=str(e), halt_pipeline=True)
 
-    def _apply_risk(self, signal_df: pd.DataFrame, regime_df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    def _apply_risk(self, signal_df: pd.DataFrame, regime_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         out = signal_df.copy()
         out["raw_position_size"] = 0.0
         out["adjusted_position_size"] = 0.0
@@ -126,6 +118,7 @@ class RiskAgent(BaseAgent):
         out["risk_amount"] = 0.0
         out["approved"] = False
         out["reason"] = ""
+        out["drawdown_factor"] = 1.0
 
         for i in range(len(out)):
             row = out.iloc[i]
@@ -135,10 +128,10 @@ class RiskAgent(BaseAgent):
                 continue
 
             # Base sizing: risk per trade / estimated volatility
-            # We use ATR proxy if available, else default
+            # Use ATR if available, else default
             atr_proxy = 1.5  # default
             if regime_df is not None and "atr_14" in regime_df.columns:
-                # Find nearest time match
+                # Find nearest time match (simplified: use last row)
                 closest = regime_df.iloc[-1] if len(regime_df) > 0 else None
                 if closest is not None:
                     atr_proxy = closest.get("atr_14", 1.5)
@@ -161,7 +154,6 @@ class RiskAgent(BaseAgent):
                 continue
 
             # Daily loss limit placeholder
-            # Stop and target
             stop = atr_proxy * 1.5
             target = atr_proxy * 3.0  # 1:2 R:R
 
@@ -172,6 +164,7 @@ class RiskAgent(BaseAgent):
             out.loc[out.index[i], "risk_amount"] = risk_amount
             out.loc[out.index[i], "approved"] = True
             out.loc[out.index[i], "reason"] = "Risk checks passed"
+            out.loc[out.index[i], "drawdown_factor"] = dd_factor
 
         return out
 
@@ -184,16 +177,3 @@ class RiskAgent(BaseAgent):
             return 0.5
         else:
             return 0.25
-
-    def _summarize_risk(self, risk_df: pd.DataFrame) -> Dict[str, Any]:
-        if risk_df.empty:
-            return {"summary": "No risk metrics", "approved_count": 0, "total_signals": 0}
-        total = len(risk_df)
-        approved = int(risk_df["approved"].sum()) if "approved" in risk_df.columns else 0
-        return {
-            "summary": f"Approved {approved}/{total} signals",
-            "approved_count": approved,
-            "total_signals": total,
-            "approval_rate": round(approved / total, 3) if total else 0.0,
-            "drawdown": round(self.current_drawdown, 4),
-        }

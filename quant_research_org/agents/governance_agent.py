@@ -1,14 +1,7 @@
 """
 Governance Agent (NEW — CRITICAL)
-Anti-bloat + anti-overfit firewall.
-Evaluates feature set for:
-1. Redundancy (correlation > 0.90)
-2. Over-complexity
-3. Feature leakage risk
-
-Decides: KEEP / MERGE / REMOVE
-Ensures: EMA system becomes "state representation", not raw indicators.
-Recommends: Whether SAE compression is required.
+Anti-bloat + anti-overfit firewall – processes each symbol independently.
+Memory‑safe: does not duplicate the full feature DataFrame.
 """
 from __future__ import annotations
 
@@ -37,17 +30,11 @@ class GovernanceDecision:
     merged_into: Optional[str] = None
 
 class GovernanceAgent(BaseAgent):
-    """
-    Owns the constraint: ANTI-BLOAT and ANTI-OVERFIT.
-    - Mandatory gate after Feature Agent
-    - No pipeline proceeds without governance approval
-    """
-
     def __init__(self, state_store: StateStore, message_bus: MessageBus):
         super().__init__("governance_agent", state_store, message_bus)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
-        logger.info("[GovernanceAgent] Reviewing feature set...")
+        logger.info("[GovernanceAgent] Reviewing feature set (per symbol, memory safe)...")
 
         try:
             if not input_artifact_id:
@@ -58,36 +45,46 @@ class GovernanceAgent(BaseAgent):
             feature_df = bundle["feature_df"]
             schema_raw = bundle.get("schema", [])
 
-            decisions, diagnostics = self._review(feature_df, schema_raw)
+            # Process each symbol separately
+            symbols = feature_df['symbol'].unique()
+            all_decisions: List[GovernanceDecision] = []
+            approved_features_per_symbol: Dict[str, List[str]] = {}
+            feature_union_keep = set()
+            feature_union_remove = set()
 
-            approved_features = [d.feature for d in decisions if d.action in ("KEEP", "MERGE")]
-            removed_features = [d.feature for d in decisions if d.action == "REMOVE"]
+            for sym in symbols:
+                logger.info(f"  Running governance on {sym}...")
+                sym_df = feature_df[feature_df['symbol'] == sym].copy()
+                decisions, _ = self._review(sym_df, schema_raw)
+                all_decisions.extend(decisions)
+                keep = [d.feature for d in decisions if d.action in ("KEEP", "MERGE")]
+                approved_features_per_symbol[sym] = keep
+                feature_union_keep.update(keep)
+                feature_union_remove.update([d.feature for d in decisions if d.action == "REMOVE"])
 
-            # Build approved feature DataFrame
-            keep_cols = ["time", "symbol", "open", "high", "low", "close", "volume"] + approved_features
-            available = [c for c in keep_cols if c in feature_df.columns]
-            approved_df = feature_df[available].copy()
-
+            approved_features = list(feature_union_keep)
+            removed_features = list(feature_union_remove)
             sae_recommended = len(approved_features) > SAE_TRIGGER_COUNT
-
-            # If EMAs are raw, flag that they should become state representation
             ema_state_note = self._check_ema_state_representation(approved_features)
 
-            # Mark parent as reviewed
-            self.store.update_status(input_artifact_id, ArtifactStatus.APPROVED if len(removed_features) < len(decisions) else ArtifactStatus.REJECTED)
+            # Mark parent as approved
+            self.store.update_status(input_artifact_id, ArtifactStatus.APPROVED if approved_features else ArtifactStatus.REJECTED)
 
+            # ✅ CRITICAL CHANGE: Do NOT copy the full DataFrame – we store only metadata.
+            # Downstream agents must read from the original feature artifact and filter on the fly.
             output_id = self._produce_artifact(
                 name="governance_approved_feature_schema",
                 data={
-                    "approved_df": approved_df,
-                    "decisions": [d.__dict__ for d in decisions],
                     "approved_features": approved_features,
                     "removed_features": removed_features,
+                    "per_symbol": approved_features_per_symbol,
+                    "original_feature_artifact_id": input_artifact_id,  # reference for downstream
+                    "approved_df": None,  # prevent memory explosion
                 },
                 phase="governance",
                 parent_artifact=input_artifact_id,
                 tags=["governance", "approved"],
-                notes=f"Approved {len(approved_features)} features. Removed {len(removed_features)}. SAE recommended: {sae_recommended}. {ema_state_note}",
+                notes=f"Approved {len(approved_features)} features. SAE={sae_recommended}. {ema_state_note}",
             )
 
             return AgentResult(
@@ -95,11 +92,9 @@ class GovernanceAgent(BaseAgent):
                 artifact_id=output_id,
                 message=f"Governance complete. Kept {len(approved_features)}, removed {len(removed_features)}. SAE={sae_recommended}",
                 diagnostics={
-                    **diagnostics,
                     "sae_recommended": sae_recommended,
                     "approved_count": len(approved_features),
                     "removed_count": len(removed_features),
-                    "ema_state_note": ema_state_note,
                 },
             )
 
@@ -108,20 +103,14 @@ class GovernanceAgent(BaseAgent):
             return AgentResult(success=False, message=str(e), halt_pipeline=True)
 
     def _review(self, df: pd.DataFrame, schema_raw: List[Dict]) -> Tuple[List[GovernanceDecision], Dict[str, Any]]:
-        """Run the governance review rules."""
-        # Identify numeric feature columns only
         exclude = {"time", "symbol", "open", "high", "low", "close", "volume"}
         numeric_cols = [c for c in df.columns if c not in exclude and pd.api.types.is_numeric_dtype(df[c])]
-
         decisions: List[GovernanceDecision] = []
         diagnostics: Dict[str, Any] = {"correlation_matrix": None, "leakage_flags": [], "complexity_score": 0}
 
-        # Rule 1: Correlation analysis
         if len(numeric_cols) > 1:
             corr = df[numeric_cols].corr().abs()
             diagnostics["correlation_matrix"] = corr.to_dict()
-
-            # Find highly correlated pairs
             high_corr_pairs: Set[Tuple[str, str]] = set()
             for i in range(len(numeric_cols)):
                 for j in range(i + 1, len(numeric_cols)):
@@ -129,23 +118,18 @@ class GovernanceAgent(BaseAgent):
                     val = corr.loc[c1, c2]
                     if val > CORRELATION_THRESHOLD and not np.isnan(val):
                         high_corr_pairs.add((c1, c2))
-
-            # Decide MERGE for redundant EMA ratios vs raw EMAs
             merged = set()
             for c1, c2 in high_corr_pairs:
                 if c1 in merged or c2 in merged:
                     continue
-                # Prefer ratio / composite over raw slower EMAs if tactical EMAs present
                 if "ratio" in c1 or c2 in {"ema_50_200_ratio", "ema_50_100_ratio", "ema_7_21_ratio", "ema_7_34_ratio", "ema_21_34_ratio"}:
                     keep = c1 if "ratio" in c1 else c2
                     drop = c2 if "ratio" in c1 else c1
                 else:
                     keep, drop = c1, c2
-
                 decisions.append(GovernanceDecision(feature=drop, action="REMOVE", reason=f"Redundant with {keep} (corr={corr.loc[c1, c2]:.3f})"))
                 merged.add(drop)
 
-        # Rule 2: Over-complexity
         for col in numeric_cols:
             if any(d.feature == col for d in decisions):
                 continue
@@ -154,18 +138,6 @@ class GovernanceAgent(BaseAgent):
                 decisions.append(GovernanceDecision(feature=col, action="REMOVE", reason=f"Excessive nulls ({null_rate:.1%})"))
                 continue
 
-        # Rule 3: Feature leakage risk
-        leakage_indicators = ["close", "open", "high", "low"]
-        for col in numeric_cols:
-            if any(d.feature == col for d in decisions):
-                continue
-            # If a feature is almost perfectly correlated with close/open, it's likely leakage
-            for leak in leakage_indicators:
-                if leak in col and col != leak and not col.startswith("ema") and not col.startswith("rsi") and not col.startswith("dist"):
-                    # Skip legitimate derived features
-                    pass
-
-        # Approve remaining
         removed_set = {d.feature for d in decisions}
         for col in numeric_cols:
             if col not in removed_set:
@@ -175,7 +147,7 @@ class GovernanceAgent(BaseAgent):
         return decisions, diagnostics
 
     def _check_ema_state_representation(self, approved: List[str]) -> str:
-        emas = [f for f in approved if f.startswith("ema_") and not "ratio" in f]
+        emas = [f for f in approved if f.startswith("ema_") and "ratio" not in f]
         ratios = [f for f in approved if "ratio" in f]
         if len(emas) > 4 and len(ratios) < 2:
             return "WARNING: EMAs are raw indicators. Consider using EMA-ratios as state representation."

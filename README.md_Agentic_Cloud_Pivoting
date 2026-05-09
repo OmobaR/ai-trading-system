@@ -1,0 +1,239 @@
+Here are two polished versions you can use immediately:
+
+---
+
+# 📘 1. GitHub README (Production-Grade)
+
+```markdown
+# AI Trading System (MT5 + Python + Agentic Research)
+
+## 🧠 Overview
+
+This project is an **AI-assisted trading system** integrating **MetaTrader 5 (MT5)** with a Python-based orchestration and research layer.
+
+It is designed to evolve into a **modular, institutional-grade trading infrastructure** powered by **agentic development workflows** and **data-first principles**.
+
+---
+
+## 🚧 Current Challenges
+
+The system is undergoing a major transition to resolve the following:
+
+### 1. Architecture Fragmentation
+- Live trading (`src/`), research (`quant_research_org/`), and data (`data_pipeline/`) are not fully isolated
+- Legacy and experimental code coexist with production logic
+
+### 2. Data Integrity Issues
+- Mixed timeframe OHLCV data in a single table
+- Resampling used to reconstruct higher timeframes
+- Leads to unreliable backtests and biased signals
+
+### 3. MT5–Python Integration Constraints
+- MT5 Python API lacks global variable access
+- Current workaround uses a **CSV signal bridge**
+
+### 4. Execution Ambiguity
+- Overlap between MT5 (MQL5) and Python strategy logic
+- Risk of conflicting signals and duplicated execution
+
+### 5. Codebase Entropy
+- Redundant modules, outdated scripts, and unclear dependencies
+- Slows debugging and increases system fragility
+
+---
+
+## 🚀 Solution Strategy
+
+We are implementing an **agentic cloud engineering approach** using version-controlled workflows.
+
+---
+
+### 🔹 1. Clean Architectural Separation
+
+```
+
+ai-trading-system/
+├── src/                    # LIVE (real-time trading only)
+├── quant_research_org/     # RESEARCH (batch, agent-driven)
+├── data_pipeline/          # DATA (validation & correctness)
+├── _archive/               # Deprecated/legacy modules
+
+```
+
+- No cross-imports between layers
+- Strict separation of responsibilities
+
+---
+
+### 🔹 2. Data Pipeline Rebuild (Correctness First)
+
+- No resampling of higher timeframes
+- Separate datasets per timeframe
+- Validation with integrity scoring
+- Alignment without lookahead bias
+- Optimized Parquet outputs for backtesting
+
+---
+
+### 🔹 3. MT5-Centric Execution Model
+
+- MT5 (MQL5) is the **primary signal & execution engine**
+- Python handles:
+  - Signal ingestion (CSV bridge)
+  - Risk management
+  - Orchestration & logging
+
+---
+
+### 🔹 4. Agentic Development Workflow
+
+Using AI agents to:
+- Audit repository structure
+- Identify redundant or unsafe code
+- Refactor safely with traceability
+- Enforce architectural boundaries
+
+All changes are:
+- Version-controlled
+- Auditable
+- Reproducible
+
+---
+
+### 🔹 5. Shared Infrastructure
+
+- **PostgreSQL / TimescaleDB** → historical & research data
+- **Redis** → real-time feature store
+- **Dockerized services** for reproducibility
+
+---
+
+## 🔄 Signal Flow (Current)
+
+```
+
+MT5 (SAE Engine)
+↓
+CSV Export (SAE_Signals.csv)
+↓
+Python (CSVSignalReader)
+↓
+Strategy Evaluation
+↓
+Risk Manager
+↓
+Execution / Logging
+
+```
+
+---
+
+## 🎯 End Goal
+
+A **robust, modular, and scalable trading system** where:
+
+- ✅ Data is clean and validated  
+- ✅ MT5 generates authoritative signals  
+- ✅ Python orchestrates without conflict  
+- ✅ Research pipelines continuously improve strategies  
+- ✅ AI agents accelerate development safely  
+
+---
+
+## ⚠️ Development Principles
+
+- Do not mix live and research code
+- Do not trust unvalidated data
+- Prefer minimal, reversible changes
+- Archive — don’t delete — legacy code
+
+---
+
+## 🧭 Status
+
+🚧 In active refactor phase  
+🎯 Target: Fully stable MT5-driven trading with validated data pipeline and agentic research integration
+
+---
+
+## 🤝 Contributions
+
+Contributions should follow:
+- Clear separation of concerns
+- Data integrity guarantees
+- Full traceability of changes
+
+---
+
+```
+
+---
+
+# 🎤 2. Pitch / Collaboration Summary (Concise & High-Impact)
+
+Use this when explaining to collaborators, devs, or partners:
+
+---
+
+## 🚀 AI Trading System — Project Summary
+
+We are building a **next-generation AI-assisted trading system** that integrates **MetaTrader 5 (MT5)** with a Python-based orchestration and research layer.
+
+### 🔍 The Problem
+
+The current system faces several structural challenges:
+
+* **Fragmented architecture** — live trading, research, and data pipelines are not fully separated
+* **Unreliable data** — mixed timeframes and resampling introduce bias in backtests
+* **Integration limitations** — MT5 Python API constraints required a CSV-based signal bridge
+* **Execution ambiguity** — overlapping logic between MT5 and Python risks conflicting signals
+* **Codebase entropy** — legacy and experimental code reduce clarity and stability
+
+---
+
+### 🧠 Our Approach
+
+We are solving this using an **agentic cloud engineering model** built on version-controlled codebases (e.g., GitHub), where AI agents assist in:
+
+* Auditing and restructuring the system
+* Removing redundancy and enforcing clean architecture
+* Rebuilding the data pipeline with correctness-first principles
+* Validating and stabilizing MT5 ↔ Python signal flow
+
+---
+
+### ⚙️ System Design Principles
+
+* **MT5-first execution** → MQL5 handles signals and trades
+* **Python as orchestrator** → risk management, logging, coordination
+* **Data integrity first** → no resampling, strict validation, aligned datasets
+* **Modular architecture** → clear separation of live, research, and data layers
+
+---
+
+### 🔄 Outcome
+
+The end goal is a **modular, scalable, and reliable trading system** where:
+
+* Signals are trustworthy
+* Data is clean and bias-free
+* Research continuously improves performance
+* AI agents accelerate development without compromising safety
+
+---
+
+### 🎯 Vision
+
+To evolve into an **institutional-grade trading infrastructure** that combines:
+
+* Algorithmic trading (MT5)
+* Data engineering (Python + DB)
+* AI-driven research pipelines
+* Agent-assisted development workflows
+
+---
+
+If you want, next I can:
+
+* Turn this into a **Notion doc / project roadmap**
+* Or map this into a **multi-agent system design (CrewAI-style)** for your workflow

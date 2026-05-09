@@ -1,9 +1,5 @@
 """
-Deployment Agent (Phase 10)
-Converts final system to MQL5 Expert Advisor template.
-- Reads optimized parameters
-- Generates MQL5 source with regime-aware logic
-- Not a full EA, but a structured template for MT5
+Deployment Agent (Phase 10) – writes MQL5 template.
 """
 from __future__ import annotations
 
@@ -70,11 +66,12 @@ void OnDeinit(const int reason)
 class DeploymentAgent(BaseAgent):
     """
     Owns the constraint: PRODUCTION READINESS.
+    Writes MQL5 template to the live bridge directory.
     """
 
-    def __init__(self, state_store: StateStore, message_bus: MessageBus, output_dir: str = "./output/mql5"):
+    def __init__(self, state_store: StateStore, message_bus: MessageBus, output_dir: str = "/app/src/execution/mql5"):
         super().__init__("deployment_agent", state_store, message_bus)
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path("C:/Users/Olugb/Workspace/ai-trading-system/src/execution/mql5")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 AI Trading System - Multi‑Strategy Orchestrator
-Full integration with rolling window, feature computation, risk management.
+Full integration with rolling window, feature computation, risk management,
+and real SAE adapter via MT5 global variables (MQL5 SAE Suite).
 """
 
 import asyncio
@@ -14,7 +15,7 @@ import os
 import random
 import argparse
 import pandas as pd
-import numpy as np
+import MetaTrader5 as mt5
 
 # Fix imports
 try:
@@ -23,7 +24,8 @@ try:
     from events.event_store import EventStore
     from risk.risk_manager import RiskManagerAgent
     from strategy.nnfx_strategy import NNFXStrategy
-    from strategy.sae_weighted_strategy import SAEWeightedStrategy
+    from strategy.sae_strategy import SAEStrategy
+    from execution.mt5_global_reader import MT5GlobalReader
     from config.settings import config
 except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +34,8 @@ except ImportError:
     from events.event_store import EventStore
     from risk.risk_manager import RiskManagerAgent
     from strategy.nnfx_strategy import NNFXStrategy
-    from strategy.sae_weighted_strategy import SAEWeightedStrategy
+    from strategy.sae_strategy import SAEStrategy
+    from execution.mt5_global_reader import MT5GlobalReader
     from config.settings import config
 
 # Configure logging
@@ -113,20 +116,28 @@ class AITradingSystem:
             self.components['risk_manager'] = self.retry_sync(lambda: RiskManagerAgent(self.redis_config))
             logger.info("Risk Manager initialized")
 
+            # ---------- MT5 Global Reader for SAE ----------
+            global_reader = MT5GlobalReader()
+            logger.info("MT5 Global Reader created for SAE signals")
+
             # ---------- Load Strategies ----------
-            strategy_list = getattr(self.config, 'STRATEGIES', ['nnfx'])
+            strategy_list = getattr(self.config, 'STRATEGIES', ['nnfx', 'sae'])
             logger.info(f"Loading strategies: {strategy_list}")
+
             if 'nnfx' in strategy_list:
                 self.strategies.append(NNFXStrategy())
                 logger.info("NNFX Strategy loaded")
-            if 'sae_weighted' in strategy_list:
-                # Parameters from optimization (window=60, threshold=0.5 gave good Sharpe on FX Vol)
-                sae_params = {
-                    'min_net_score': 32,
-                    'decision_threshold': 0.56
-                }
-                self.strategies.append(SAEWeightedStrategy(**sae_params))
-                logger.info("SAE Weighted Strategy loaded")
+
+            if 'sae' in strategy_list:
+                sae_strategy = SAEStrategy(
+                    min_net_score=55,
+                    use_divergence=True,
+                    use_rsi_extreme=True,
+                    signal_system="BOTH"
+                )
+                sae_strategy.set_reader(global_reader)
+                self.strategies.append(sae_strategy)
+                logger.info("✅ SAE Strategy (real MQL5 adapter) loaded")
 
             logger.info(f"Total strategies loaded: {len(self.strategies)}")
             logger.info("All components initialized successfully")
@@ -174,12 +185,19 @@ class AITradingSystem:
 
                     # Run each strategy
                     for strategy in self.strategies:
-                        signal = strategy.generate_signal(symbol, df, datetime.now())
+                        # Determine which method to call based on strategy type
+                        if hasattr(strategy, 'on_tick'):
+                            # SAE uses on_tick (polling globals)
+                            signal = strategy.on_tick(symbol, df['close'].iloc[-1], datetime.now())
+                        else:
+                            # NNFX uses generate_signal with full DataFrame
+                            signal = strategy.generate_signal(symbol, df, datetime.now())
+                        
                         if signal and signal.get('action') in ('BUY', 'SELL'):
                             price = df['close'].iloc[-1]
                             confidence = signal.get('confidence', 0.7)
-                            # Approximate ATR for risk manager (use the latest ATR if available, else a placeholder)
-                            atr = 0.01  # You could compute ATR from df here
+                            # Approximate ATR – in production, compute properly
+                            atr = df['close'].iloc[-1] * 0.008   # rough estimate
                             # Approve trade with risk manager
                             approved_size, details = risk_mgr.approve_trade(
                                 symbol=symbol,
@@ -188,13 +206,13 @@ class AITradingSystem:
                                 price=price
                             )
                             if approved_size > 0.01:
-                                logger.info(f"✅ TRADE: {signal['action']} {symbol} | "
+                                logger.info(f"✅ APPROVED TRADE: {signal['action']} {symbol} | "
                                             f"Size={approved_size:.3f} | Conf={confidence:.2f} | "
-                                            f"Strategy={signal.get('strategy')}")
+                                            f"Strategy={signal.get('strategy')} | Source={signal.get('source', 'N/A')}")
                                 # TODO: Replace with actual execution (DLL bridge or MT5 order)
                                 # self.execute_order(symbol, signal['action'], approved_size, price)
                             else:
-                                logger.debug(f"❌ Trade rejected: {symbol} {signal['action']} | Reason={details.get('reason')}")
+                                logger.debug(f"Risk rejected: {symbol} {signal['action']} | Reason={details.get('reason')}")
 
                 await asyncio.sleep(60)  # Check every minute (align with M1 bars)
 
@@ -264,6 +282,7 @@ class AITradingSystem:
         self.running = False
         if 'market_data' in self.components:
             self.components['market_data'].stop()
+        mt5.shutdown()
         logger.info("AI Trading System shutdown complete")
 
 def main():

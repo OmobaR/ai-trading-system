@@ -1,5 +1,5 @@
 """
-Filter Agent (Phase 4)
+Filter Agent (Phase 4) – per‑symbol, file‑based.
 Explicitly sits AFTER regime.
 Applies hard filters based on regime classification and confidence.
 - No signal generation here.
@@ -8,6 +8,7 @@ Applies hard filters based on regime classification and confidence.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 import pandas as pd
@@ -34,6 +35,8 @@ class FilterAgent(BaseAgent):
         self.min_confidence = min_confidence
         self.filter_transitions = filter_transitions
         self.filter_range = filter_range
+        self.output_dir = Path("data/processed/filter")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
         logger.info("[FilterAgent] Applying eligibility filters...")
@@ -42,32 +45,70 @@ class FilterAgent(BaseAgent):
             if not input_artifact_id:
                 return AgentResult(success=False, message="FilterAgent requires regime artifact")
 
-            artifact = self.store.load(input_artifact_id)
-            bundle = artifact.data
-            df = bundle.get("regime_df") if isinstance(bundle, dict) else bundle
-            if not isinstance(df, pd.DataFrame):
-                return AgentResult(success=False, message="FilterAgent expects DataFrame")
+            regime_artifact = self.store.load(input_artifact_id)
+            file_paths = regime_artifact.data.get("file_paths", [])
+            if not file_paths:
+                return AgentResult(success=False, message="No regime files found")
 
-            filtered_df, mask, diagnostics = self._apply_filters(df)
+            filtered_files = []
+            total_rows_before = 0
+            total_rows_after = 0
+            regime_counts_before = {}
+            regime_counts_after = {}
+
+            for file_path in file_paths:
+                symbol = Path(file_path).stem.replace("_regime", "")
+                logger.info(f"  Filtering {symbol}...")
+                df = pd.read_parquet(file_path)
+                before = len(df)
+                total_rows_before += before
+
+                # Count regimes before filtering
+                if "regime" in df.columns:
+                    for reg, cnt in df["regime"].value_counts().items():
+                        regime_counts_before[reg] = regime_counts_before.get(reg, 0) + cnt
+
+                filtered_df, mask, diag = self._apply_filters(df)
+                after = len(filtered_df)
+                total_rows_after += after
+
+                # Count regimes after filtering
+                if "regime" in filtered_df.columns:
+                    for reg, cnt in filtered_df["regime"].value_counts().items():
+                        regime_counts_after[reg] = regime_counts_after.get(reg, 0) + cnt
+
+                out_path = self.output_dir / f"{symbol}_filtered.parquet"
+                filtered_df.to_parquet(out_path, index=False)
+                filtered_files.append(str(out_path))
+
+            diagnostics = {
+                "original_rows": total_rows_before,
+                "filtered_rows": total_rows_after,
+                "retained_pct": round(total_rows_after / total_rows_before, 3) if total_rows_before else 0.0,
+                "regime_counts_before": regime_counts_before,
+                "regime_counts_after": regime_counts_after,
+                "min_confidence": self.min_confidence,
+                "filter_transitions": self.filter_transitions,
+                "filter_range": self.filter_range,
+            }
 
             artifact_id = self._produce_artifact(
                 name="filtered_data",
                 data={
-                    "filtered_df": filtered_df,
-                    "mask": mask,
-                    "original_rows": len(df),
-                    "filtered_rows": len(filtered_df),
+                    "file_paths": filtered_files,
+                    "original_rows": total_rows_before,
+                    "filtered_rows": total_rows_after,
                 },
                 phase="filter",
                 parent_artifact=input_artifact_id,
                 tags=["filtered", "eligible"],
-                notes=f"Filtered from {len(df)} to {len(filtered_df)} rows",
+                notes=f"Filtered from {total_rows_before} to {total_rows_after} rows",
             )
 
             return AgentResult(
                 success=True,
                 artifact_id=artifact_id,
-                message=f"Filter applied: {len(filtered_df)}/{len(df)} rows eligible",
+                message=f"Filter applied: {total_rows_after}/{total_rows_before} rows eligible",
                 diagnostics=diagnostics,
             )
 
@@ -91,12 +132,4 @@ class FilterAgent(BaseAgent):
             mask &= df["regime"] != "range"
 
         filtered = df[mask].copy()
-
-        diagnostics = {
-            "min_confidence": self.min_confidence,
-            "filter_transitions": self.filter_transitions,
-            "filter_range": self.filter_range,
-            "retained_pct": round(len(filtered) / len(df), 3) if len(df) else 0.0,
-            "by_regime": filtered["regime"].value_counts().to_dict() if "regime" in filtered.columns else {},
-        }
-        return filtered, mask, diagnostics
+        return filtered, mask, {}

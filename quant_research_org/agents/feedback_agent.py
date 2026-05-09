@@ -1,15 +1,5 @@
 """
-Feedback Loop Agent (NEW)
-Input: backtest results, live trading logs (when available)
-Tasks:
-- Detect failure patterns
-- Identify regime misclassification
-- Detect overfitting signals
-Recommend:
-- Feature changes
-- Parameter adjustments
-- Strategy modifications
-Output: improvement plan (loops back to Feature / Regime)
+Feedback Loop Agent (NEW) – lightweight, only small plans.
 """
 from __future__ import annotations
 
@@ -46,7 +36,6 @@ class FeedbackAgent(BaseAgent):
         logger.info("[FeedbackAgent] Analyzing for improvement opportunities...")
 
         try:
-            # Load backtest report
             backtest_id = kwargs.get("backtest_artifact_id")
             report = None
             if backtest_id:
@@ -64,7 +53,6 @@ class FeedbackAgent(BaseAgent):
                 regime_correctness = report.get("regime_correctness_score", 1.0)
                 max_dd = report.get("max_drawdown", 0)
 
-                # Failure pattern detection
                 if sharpe < 0.5:
                     plans.append(ImprovementPlan(
                         trigger="low_sharpe",
@@ -101,7 +89,6 @@ class FeedbackAgent(BaseAgent):
                         rationale=f"Max drawdown {max_dd:.1%} exceeds 20% threshold",
                     ))
 
-                # Overfit signal: impossible Sharpe on small sample
                 total_trades = report.get("total_trades", 0)
                 if sharpe > 2.5 and total_trades < 200:
                     plans.append(ImprovementPlan(

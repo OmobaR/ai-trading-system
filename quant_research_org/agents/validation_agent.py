@@ -40,12 +40,12 @@ class ValidationAgent(BaseAgent):
             artifact = self.store.load(input_artifact_id)
             bundle = artifact.data
             report = bundle.get("report") if isinstance(bundle, dict) else None
-            trades = bundle.get("trades") if isinstance(bundle, dict) else []
 
             if not report:
                 return AgentResult(success=False, message="No backtest report found")
 
-            checks, passed = self._validate(report, trades)
+            # trades list is no longer stored; pass empty list
+            checks, passed = self._validate(report, [])
 
             artifact_id = self._produce_artifact(
                 name="validation_report",

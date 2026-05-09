@@ -32,7 +32,8 @@ class TradingConfig:
             "SFX Vol 20", "SFX Vol 40", "SFX Vol 60", "SFX Vol 80", "SFX Vol 99",
             "TrendX 600", "TrendX 1200", "TrendX 1800",
             "SwitchX 600", "SwitchX 1200", "SwitchX 1800",
-            "BreakX 600", "BreakX 1200", "BreakX 1800"
+            "BreakX 600", "BreakX 1200", "BreakX 1800",
+            "PlusX 1", "QuadX", "FiboX" # <-- newly added and properly case-capitalized
         ])
         
         # MT5

@@ -2,6 +2,7 @@
 Core: Shared Memory / State Store for inter-agent communication.
 Implements artifact persistence with versioning, schema validation,
 and lineage tracking for reproducible quant research.
+Also pushes approved features to Redis for live consumption.
 """
 from __future__ import annotations
 
@@ -9,12 +10,15 @@ import json
 import hashlib
 import pickle
 import logging
+import redis
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import pandas as pd
+
+from src.config.settings import config
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,7 @@ class StateStore:
     - File-based artifact registry for reproducibility
     - In-memory hot cache for pipeline speed
     - Strict schema validation gates
+    - Redis integration for live system features
     """
 
     def __init__(self, base_path: str = "./data/processed"):
@@ -84,6 +89,8 @@ class StateStore:
         self._registry: Dict[str, Dict[str, Any]] = {}
         self._hot_cache: Dict[str, PipelineArtifact] = {}
         self._load_registry()
+        # Connect to Redis (assumes running on localhost:6379)
+        self.redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
     def _load_registry(self):
         if self._registry_path.exists():
@@ -124,6 +131,19 @@ class StateStore:
 
         # Update hot cache
         self._hot_cache[aid] = artifact
+
+        # If this is an approved artifact from the governance agent,
+        # push its contents to Redis for the live trading system.
+        if (artifact.metadata.agent == "governance_agent" and
+            artifact.metadata.status == ArtifactStatus.APPROVED):
+            approved_data = artifact.data  # expected dict: {symbol: {'features': {...}, 'regime': str}}
+            if isinstance(approved_data, dict):
+                for sym, feat_dict in approved_data.items():
+                    self.push_approved_features(
+                        sym,
+                        feat_dict.get('features', {}),
+                        feat_dict.get('regime', 'unknown')
+                    )
 
         logger.info(f"[StateStore] Saved artifact {aid} ({artifact.metadata.agent} / {artifact.metadata.phase})")
         return aid
@@ -188,7 +208,32 @@ class StateStore:
         if artifact_id in self._hot_cache:
             self._hot_cache[artifact_id].metadata.status = status
 
+        # If setting status to APPROVED and artifact is from governance_agent,
+        # push to Redis (redundant but safe if save didn't catch it)
+        if (status == ArtifactStatus.APPROVED and
+            self._registry[artifact_id]["metadata"].get("agent") == "governance_agent"):
+            artifact = self.load(artifact_id)
+            approved_data = artifact.data
+            if isinstance(approved_data, dict):
+                for sym, feat_dict in approved_data.items():
+                    self.push_approved_features(
+                        sym,
+                        feat_dict.get('features', {}),
+                        feat_dict.get('regime', 'unknown')
+                    )
+
         logger.info(f"[StateStore] Artifact {artifact_id} status → {status.value}")
+
+    def push_approved_features(self, symbol: str, features: Dict, regime: str):
+        """Push latest approved features to Redis for live system."""
+        key = f"approved_features:{symbol}"
+        value = json.dumps({
+            'features': features,
+            'regime': regime,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        self.redis_client.set(key, value, ex=3600)  # expire after 1 hour
+        logger.info(f"[StateStore] Pushed approved features for {symbol} to Redis")
 
     def list_artifacts(self, phase: Optional[str] = None, agent: Optional[str] = None, status: Optional[ArtifactStatus] = None) -> List[str]:
         """List artifact IDs with optional filtering."""

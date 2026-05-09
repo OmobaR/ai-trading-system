@@ -1,149 +1,118 @@
 ﻿# src/strategy/sae_strategy.py
 """
-Deterministic SAE Strategy - No randomness, real signal logic
+SAEStrategy - Real adapter to MQL5 SAE Suite
+Reads SAE_* global variables via MT5GlobalReader.
+Supports your preferences: RSI(5) divergence + tunable NetScore threshold.
+Exits remain in MQL5 ExitManager.
 """
 
 from typing import Dict, Optional
 from datetime import datetime
 import logging
-import numpy as np
+import pandas as pd
 
 from .base_strategy import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
 class SAEStrategy(BaseStrategy):
-    def __init__(self, symbol: str = None, window: int = 30, threshold: float = 1.0,
-                 initial_capital: float = 10000.0, risk_per_trade: float = 0.02, **kwargs):
+    def __init__(self,
+                 min_net_score: float = 55,
+                 use_divergence: bool = True,
+                 use_rsi_extreme: bool = True,
+                 signal_system: str = "BOTH",
+                 **kwargs):
         
-        self.symbol = symbol
-        self.window = window
-        self.threshold = threshold
-        self.initial_capital = initial_capital
-        self.risk_per_trade = risk_per_trade
-
-        self.min_net_score = kwargs.get('min_net_score', 35)
-        self.min_velocity = kwargs.get('min_velocity', 0.3)
-
+        self.min_net_score = min_net_score
+        self.use_divergence = use_divergence
+        self.use_rsi_extreme = use_rsi_extreme
+        self.signal_system = signal_system.upper()
         self.signal_count = 0
+        self.reader = None
 
-        # Store recent candles for structure logic
-        self.recent_closes = []
+        logger.info(f"SAEStrategy (REAL MQL5) initialized | min_net_score={min_net_score}, system={signal_system}")
 
-        logger.info(f"SAE Strategy (Deterministic) initialized for {symbol}")
+    def set_reader(self, reader):
+        """Inject the global variable reader (MT5GlobalReader)."""
+        self.reader = reader
+        logger.info("✅ MT5 Global Reader connected to SAEStrategy")
 
-    def generate_signal(self, symbol: str, data: Dict, timestamp: datetime) -> Optional[Dict]:
+    def generate_signal(self, symbol: str, df: pd.DataFrame, timestamp: datetime) -> Optional[Dict]:
+        """
+        Required by BaseStrategy. For SAE, we use on_tick with price only.
+        This method extracts the latest close price and calls on_tick.
+        """
+        if df is None or df.empty:
+            return None
+        price = df['close'].iloc[-1]
+        return self.on_tick(symbol, price, timestamp)
+
+    def on_tick(self, symbol: str, price: float, timestamp: datetime) -> Optional[Dict]:
+        """Main signal handler – called by orchestrator."""
+        if not self.reader:
+            logger.warning(f"No reader set for {symbol}")
+            return None
+
         try:
-            close = float(data.get('close', 0))
-            open_p = float(data.get('open', close))
-            high = float(data.get('high', close))
-            low = float(data.get('low', close))
+            # Read SAE globals
+            bias = self.reader.get_global(f"SAE_{symbol}_Bias") or 0
+            net_score = self.reader.get_global(f"SAE_{symbol}_NetScore") or 0
+            m1vel_score = self.reader.get_global(f"SAE_{symbol}_M1VelScore") or 0
+            bull_div = bool(self.reader.get_global(f"SAE_{symbol}_BullDiv_M15") or 
+                           self.reader.get_global(f"SAE_{symbol}_BullDiv_H1"))
+            bear_div = bool(self.reader.get_global(f"SAE_{symbol}_BearDiv_M15") or 
+                           self.reader.get_global(f"SAE_{symbol}_BearDiv_H1"))
+            rsi5_h1 = self.reader.get_global(f"SAE_{symbol}_RSI5_H1") or 50.0
 
-            if close <= 0 or open_p <= 0:
+            if bias == 0:
                 return None
 
-            # =========================
-            # 1. MARKET BIAS
-            # =========================
-            if "GainX" in symbol:
-                bias = 1
-            elif "PainX" in symbol:
-                bias = -1
-            else:
-                bias = 1
+            signal = None
 
-            # =========================
-            # 2. PRICE FEATURES
-            # =========================
-            price_change = (close - open_p) / open_p
-            momentum = price_change * 4000
+            # NetScore path
+            if self.signal_system in ["NETSCORE", "BOTH"]:
+                if net_score >= self.min_net_score and m1vel_score >= 20:
+                    action = "BUY" if bias > 0 else "SELL"
+                    signal = self._make_signal(symbol, action, net_score, "NETSCORE")
 
-            candle_range = max(high - low, 1e-6)
-            candle_body = abs(close - open_p)
+            # Divergence / RSI(5) path
+            if not signal and self.signal_system in ["DIVERGENCE_RSI", "BOTH"]:
+                if (bias > 0 and (bull_div or (self.use_rsi_extreme and rsi5_h1 <= 20))) or \
+                   (bias < 0 and (bear_div or (self.use_rsi_extreme and rsi5_h1 >= 80))):
+                    action = "BUY" if bias > 0 else "SELL"
+                    signal = self._make_signal(symbol, action, net_score or 50, "DIVERGENCE_RSI")
 
-            body_strength = candle_body / candle_range  # 0–1
+            if signal:
+                self.signal_count += 1
+                if self.signal_count % 40 == 0:
+                    logger.info(f"SAE SIGNAL #{self.signal_count} | {signal['action']} | {symbol} | "
+                                f"NetScore={net_score:.1f} | conf={signal['confidence']:.2f} | source={signal['source']}")
 
-            # Velocity (scaled realistically)
-            velocity = abs(price_change) * 100
-
-            if velocity < self.min_velocity:
-                return None
-
-            # =========================
-            # 3. TREND STRUCTURE (NEW)
-            # =========================
-            self.recent_closes.append(close)
-
-            if len(self.recent_closes) > 5:
-                self.recent_closes.pop(0)
-
-            trend_score = 0
-
-            if len(self.recent_closes) >= 3:
-                if self.recent_closes[-1] > self.recent_closes[-2] > self.recent_closes[-3]:
-                    trend_score = 5
-                elif self.recent_closes[-1] < self.recent_closes[-2] < self.recent_closes[-3]:
-                    trend_score = -5
-
-            # =========================
-            # 4. NET SCORE (DETERMINISTIC)
-            # =========================
-            base_score = 40
-
-            net_score = (
-                base_score
-                + momentum
-                + (body_strength * 15)
-                + trend_score
-            )
-
-            # Apply threshold scaling
-            net_score *= self.threshold
-
-            # =========================
-            # 5. FINAL FILTER
-            # =========================
-            if net_score < self.min_net_score:
-                return None
-
-            # =========================
-            # 6. SIGNAL
-            # =========================
-            action = "BUY" if bias > 0 else "SELL"
-
-            confidence = min(0.5 + (net_score / 180.0), 0.95)
-
-            self.signal_count += 1
-
-            if self.signal_count % 50 == 0:
-                logger.info(
-                    f"SIGNAL #{self.signal_count} | {action} | "
-                    f"net={net_score:.2f} | vel={velocity:.2f}"
-                )
-
-            return {
-                'action': action,
-                'symbol': symbol,
-                'confidence': round(confidence, 2),
-                'strategy': 'sae_deterministic',
-                'meta': {
-                    'net_score': round(net_score, 2),
-                    'velocity': round(velocity, 2),
-                    'momentum': round(momentum, 2),
-                    'body_strength': round(body_strength, 2),
-                    'trend_score': trend_score
-                }
-            }
+            return signal
 
         except Exception as e:
-            logger.debug(f"Signal error: {e}")
+            logger.debug(f"SAE on_tick error for {symbol}: {e}")
             return None
+
+    def _make_signal(self, symbol: str, action: str, net_score: float, source: str) -> Dict:
+        confidence = min(0.65 + (net_score / 100.0) * 0.35, 0.96)
+        return {
+            'action': action,
+            'symbol': symbol,
+            'confidence': round(confidence, 2),
+            'strategy': 'sae',
+            'source': source,
+            'meta': {
+                'net_score': round(net_score, 1),
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        }
 
     def get_parameters(self) -> dict:
         return {
-            'window': self.window,
-            'threshold': self.threshold,
             'min_net_score': self.min_net_score,
-            'min_velocity': self.min_velocity,
+            'use_divergence': self.use_divergence,
+            'use_rsi_extreme': self.use_rsi_extreme,
+            'signal_system': self.signal_system,
             'total_signals': self.signal_count
         }

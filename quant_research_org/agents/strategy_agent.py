@@ -1,7 +1,6 @@
 """
-Strategy Agent (Phase 5)
+Strategy Agent (Phase 5) – per symbol, file‑based.
 Uses: regime, filtered data, approved features.
-
 CRITICAL CONSTRAINT: Strategy cannot override regime or filters.
 - Strategy receives regime labels as immutable context
 - Generates directional signals with confidence scores
@@ -10,6 +9,7 @@ CRITICAL CONSTRAINT: Strategy cannot override regime or filters.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
@@ -42,6 +42,8 @@ class StrategyAgent(BaseAgent):
 
     def __init__(self, state_store: StateStore, message_bus: MessageBus):
         super().__init__("strategy_agent", state_store, message_bus)
+        self.output_dir = Path("data/processed/strategy")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
         logger.info("[StrategyAgent] Generating trading signals...")
@@ -50,32 +52,37 @@ class StrategyAgent(BaseAgent):
             if not input_artifact_id:
                 return AgentResult(success=False, message="StrategyAgent requires filtered data artifact")
 
-            artifact = self.store.load(input_artifact_id)
-            bundle = artifact.data
-            df = bundle.get("filtered_df") if isinstance(bundle, dict) else bundle
-            if not isinstance(df, pd.DataFrame):
-                return AgentResult(success=False, message="StrategyAgent expects DataFrame")
+            filter_artifact = self.store.load(input_artifact_id)
+            file_paths = filter_artifact.data.get("file_paths", [])
+            if not file_paths:
+                return AgentResult(success=False, message="No filtered files found")
 
-            signals: List[Signal] = []
-            for symbol, grp in df.groupby("symbol"):
-                grp = grp.sort_values("time").copy()
-                sym_signals = self._generate_signals(grp)
-                signals.extend(sym_signals)
+            signal_files = []
+            all_signals = []
 
-            signal_df = pd.DataFrame([s.__dict__ for s in signals])
+            for file_path in file_paths:
+                symbol = Path(file_path).stem.replace("_filtered", "")
+                logger.info(f"  Generating signals for {symbol}...")
+                df = pd.read_parquet(file_path)
+                sym_signals = self._generate_signals(df)
+                out_df = pd.DataFrame([s.__dict__ for s in sym_signals])
+                out_path = self.output_dir / f"{symbol}_signals.parquet"
+                out_df.to_parquet(out_path, index=False)
+                signal_files.append(str(out_path))
+                all_signals.extend(sym_signals)
 
-            diagnostics = self._summarize_signals(signals)
+            diagnostics = self._summarize_signals(all_signals)
 
             artifact_id = self._produce_artifact(
                 name="strategy_signals",
                 data={
-                    "signal_df": signal_df,
-                    "signals": [s.__dict__ for s in signals],
+                    "file_paths": signal_files,
+                    "signals": [s.__dict__ for s in all_signals],
                 },
                 phase="strategy",
                 parent_artifact=input_artifact_id,
                 tags=["signals", "strategy"],
-                notes=f"Generated {len(signals)} signals: {diagnostics['action_counts']}",
+                notes=f"Generated {len(all_signals)} signals: {diagnostics['action_counts']}",
             )
 
             return AgentResult(

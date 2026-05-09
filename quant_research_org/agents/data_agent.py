@@ -1,7 +1,7 @@
 """
 Data Agent (Phase 1)
-Builds clean dataset from raw OHLCV + synthetic index data.
-Outputs → artifact containing standardized DataFrame.
+Loads real OHLCV data from TimescaleDB.
+Standardizes and validates DataFrame.
 """
 from __future__ import annotations
 
@@ -11,14 +11,16 @@ from datetime import datetime
 
 import pandas as pd
 import numpy as np
+from sqlalchemy import create_engine
 
 from core.base_agent import BaseAgent, AgentResult
 from core.state_store import StateStore
 from core.message_bus import MessageBus
+from src.config.settings import config
 
 logger = logging.getLogger(__name__)
 
-# Synthetic symbols from existing ai-trading-system, extended
+# Default symbols – you can import from config.SYMBOLS if preferred
 DEFAULT_SYMBOLS = [
     "GainX 400", "GainX 600", "GainX 800", "GainX 999", "GainX 1200",
     "PainX 400", "PainX 600", "PainX 800", "PainX 999", "PainX 1200",
@@ -28,11 +30,13 @@ DEFAULT_SYMBOLS = [
     "TrendX 600", "TrendX 1200", "TrendX 1800",
     "SwitchX 600", "SwitchX 1200", "SwitchX 1800",
     "BreakX 600", "BreakX 1200", "BreakX 1800",
+    "PlusX 1", "QuadX", "FiboX" # <-- newly added
 ]
 
 class DataAgent(BaseAgent):
     """
     Owns the constraint: DATA INTEGRITY and STANDARDIZATION.
+    - Loads real data from TimescaleDB
     - Validates OHLCV schema
     - Enforces chronological ordering
     - Drops duplicates / invalid rows
@@ -45,27 +49,24 @@ class DataAgent(BaseAgent):
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
         """
-        Build clean dataset. Accepts either:
-        - input_artifact_id pointing to raw data artifact
-        - kwargs: 'symbols', 'periods', 'freq', 'seed' for synthetic generation
+        Load data from TimescaleDB. Parameters:
+        - symbols: list of str
+        - timeframe: str, e.g. 'M5', 'H1' (default 'M5')
+        - days: int, how many past days to load (default 500)
         """
-        logger.info("[DataAgent] Starting data preparation...")
+        logger.info("[DataAgent] Starting data preparation from local TimescaleDB...")
 
         try:
-            if input_artifact_id:
-                raw_artifact = self.store.load(input_artifact_id)
-                raw_data = raw_artifact.data
-                logger.info(f"[DataAgent] Loaded raw artifact {input_artifact_id}")
-            else:
-                symbols = kwargs.get("symbols", DEFAULT_SYMBOLS)
-                periods = kwargs.get("periods", 500)
-                freq = kwargs.get("freq", "H")
-                seed = kwargs.get("seed", 42)
-                raw_data = self._generate_synthetic(symbols, periods, freq, seed)
-                logger.info(f"[DataAgent] Generated synthetic data: {len(symbols)} symbols, {periods} periods")
+            symbols = kwargs.get("symbols", DEFAULT_SYMBOLS)
+            timeframe = kwargs.get("timeframe", "M5")
+            days = kwargs.get("days", 500)
+
+            df = self._load_from_db(symbols, timeframe, days)
+            if df.empty:
+                raise ValueError(f"No data found for symbols {symbols} in {timeframe}")
 
             # Standardize
-            clean_df = self._standardize(raw_data)
+            clean_df = self._standardize(df)
 
             # Validate
             validation = self._validate(clean_df)
@@ -81,21 +82,38 @@ class DataAgent(BaseAgent):
                 name="clean_ohlcv_dataset",
                 data=clean_df,
                 phase="data",
-                tags=["ohlcv", "clean"],
-                notes=f"Symbols: {clean_df['symbol'].nunique()}, Rows: {len(clean_df)}, "
-                      f"Period: {clean_df['time'].min()} to {clean_df['time'].max()}",
+                tags=["ohlcv", "clean", timeframe],
+                notes=f"Symbols: {clean_df['symbol'].nunique()}, Rows: {len(clean_df)}, Timeframe: {timeframe}, Days: {days}",
             )
 
             return AgentResult(
                 success=True,
                 artifact_id=artifact_id,
-                message=f"Clean dataset produced: {len(clean_df)} rows, {clean_df['symbol'].nunique()} symbols",
+                message=f"Loaded {len(clean_df)} rows from {timeframe}",
                 diagnostics=validation,
             )
 
         except Exception as e:
             logger.exception("[DataAgent] Fatal error during execution")
             return AgentResult(success=False, message=str(e), halt_pipeline=True)
+
+    def _load_from_db(self, symbols, timeframe='M5', days=500):
+        from sqlalchemy import create_engine
+        from src.config.settings import config
+        db_uri = f"postgresql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
+        engine = create_engine(db_uri)
+        table = f"ohlcv_{timeframe.lower()}"
+        query = f"""
+            SELECT time, symbol, open, high, low, close, volume 
+            FROM {table} 
+            WHERE symbol = ANY(%s) 
+            AND time > NOW() - INTERVAL '%s days'
+            AND open > 0 AND high > 0 AND low > 0 AND close > 0
+            ORDER BY time
+        """
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn, params=(symbols, days), parse_dates=['time'])
+        return df
 
     def _standardize(self, data: Any) -> pd.DataFrame:
         """Convert various input formats to strict DataFrame schema."""
@@ -183,39 +201,4 @@ class DataAgent(BaseAgent):
             errors.append(f"{time_issues} symbols with non-chronological data")
 
         checks["total_rows"] = len(df)
-        checks["symbols"] = df["symbol"].nunique()
-        checks["date_range"] = [df["time"].min().isoformat(), df["time"].max().isoformat()]
-
         return {"passed": len(errors) == 0, "errors": errors, "checks": checks}
-
-    def _generate_synthetic(self, symbols: List[str], periods: int, freq: str, seed: int) -> pd.DataFrame:
-        np.random.seed(seed)
-        frames = []
-        base_time = pd.Timestamp("2024-01-01")
-
-        for i, sym in enumerate(symbols):
-            base_price = 100.0 + (hash(sym) % 50)
-            trend = np.random.choice([-1, 1]) * np.random.uniform(0.001, 0.01)
-            noise = np.random.randn(periods).cumsum() * np.random.uniform(0.5, 2.0)
-            prices = base_price + np.arange(periods) * trend + noise
-
-            # Ensure OHLC structure
-            opens = prices + np.random.randn(periods) * 0.3
-            highs = np.maximum(opens, prices) + np.abs(np.random.randn(periods)) * 0.5 + 0.1
-            lows = np.minimum(opens, prices) - np.abs(np.random.randn(periods)) * 0.5 - 0.1
-            closes = prices
-            volumes = np.random.randint(800, 5000, periods)
-
-            times = pd.date_range(start=base_time, periods=periods, freq=freq)
-            df = pd.DataFrame({
-                "time": times,
-                "symbol": sym,
-                "open": opens,
-                "high": highs,
-                "low": lows,
-                "close": closes,
-                "volume": volumes,
-            })
-            frames.append(df)
-
-        return pd.concat(frames, ignore_index=True)

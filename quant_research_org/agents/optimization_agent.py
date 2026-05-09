@@ -1,7 +1,5 @@
 """
-Optimization Agent (Phase 9)
-Operates on: either raw features OR latent space (if SAE was used).
-Simplified walk-forward parameter grid search.
+Optimization Agent (Phase 9) – lightweight parameter search.
 """
 from __future__ import annotations
 
@@ -42,8 +40,7 @@ class OptimizationAgent(BaseAgent):
             if not input_artifact_id:
                 return AgentResult(success=False, message="OptimizationAgent requires validation artifact")
 
-            # In a full system, we'd load the backtest trades and run grid search
-            # Here we produce a default optimized parameter set
+            # Simplified: output default parameters
             best = OptimizedParameters(
                 min_confidence=0.60,
                 filter_transitions=True,

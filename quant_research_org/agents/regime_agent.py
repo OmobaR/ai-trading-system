@@ -1,24 +1,12 @@
 """
-Regime Agent (Phase 3 — upgraded)
-Integrates:
-- EMA hierarchy (structural + tactical)
-- ADX
-- Liquidity context (distance to yearly high/low)
-- Future HMM hook placeholder
-
-Classifies into:
-- Trend continuation
-- Weak trend / exhaustion
-- Range
-- Breakout
-- Transition
-
-Does NOT generate trade signals.
+Regime Agent (Phase 3 — upgraded, memory‑safe, file‑based)
+Classifies regimes and writes per‑symbol Parquet files.
 """
 from __future__ import annotations
 
 import logging
-from typing import Optional, Dict, List, Any
+from pathlib import Path
+from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass
 
 import pandas as pd
@@ -42,45 +30,60 @@ class RegimeAgent(BaseAgent):
     """
     Owns the constraint: REGIME CORRECTNESS.
     If regime is wrong, everything downstream is wrong.
+    Memory‑safe: processes one symbol at a time, writes Parquet.
     """
 
     def __init__(self, state_store: StateStore, message_bus: MessageBus):
         super().__init__("regime_agent", state_store, message_bus)
+        self.output_dir = Path("data/processed/regime")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
-        logger.info("[RegimeAgent] Classifying market regimes...")
+        logger.info("[RegimeAgent] Classifying market regimes (per symbol, file‑based)...")
 
         try:
             if not input_artifact_id:
-                return AgentResult(success=False, message="RegimeAgent requires input artifact")
+                return AgentResult(success=False, message="RegimeAgent requires governance artifact")
 
-            artifact = self.store.load(input_artifact_id)
-            bundle = artifact.data
-            df = bundle.get("approved_df") if isinstance(bundle, dict) else bundle
-            if isinstance(bundle, dict) and "approved_df" in bundle:
-                df = bundle["approved_df"]
-            elif isinstance(bundle, pd.DataFrame):
-                df = bundle
-            else:
-                return AgentResult(success=False, message="RegimeAgent expects DataFrame input")
+            # 1. Load governance artifact
+            gov_artifact = self.store.load(input_artifact_id)
+            gov_data = gov_artifact.data
+            approved_features = gov_data.get("approved_features", [])
+            original_feature_id = gov_data.get("original_feature_artifact_id")
+            if not original_feature_id:
+                return AgentResult(success=False, message="Governance artifact missing original_feature_artifact_id")
 
-            regime_frames = []
+            # 2. Load original feature DataFrame
+            feat_artifact = self.store.load(original_feature_id)
+            full_df = feat_artifact.data["feature_df"]
+
+            # 3. Determine columns to keep
+            essential = ["time", "symbol", "open", "high", "low", "close", "volume"]
+            keep_cols = essential + approved_features
+            available = [c for c in keep_cols if c in full_df.columns]
+
+            # 4. Process each symbol individually
+            symbols = full_df['symbol'].unique()
+            file_paths = []
             classifications: Dict[str, List[RegimeClassification]] = {}
 
-            for symbol, grp in df.groupby("symbol"):
-                grp = grp.sort_values("time").copy()
-                classified, cls_list = self._classify(grp)
-                regime_frames.append(classified)
+            for symbol in symbols:
+                logger.info(f"  Processing regime for {symbol}...")
+                sym_mask = full_df['symbol'] == symbol
+                sym_df = full_df.loc[sym_mask, available].copy()
+                classified, cls_list = self._classify(sym_df)
+                file_path = self.output_dir / f"{symbol}_regime.parquet"
+                classified.to_parquet(file_path, index=False)
+                file_paths.append(str(file_path))
                 classifications[symbol] = cls_list
-
-            regime_df = pd.concat(regime_frames, ignore_index=True)
+                del sym_df  # free memory
 
             diagnostics = self._summarize_regimes(classifications)
 
             artifact_id = self._produce_artifact(
                 name="regime_labels",
                 data={
-                    "regime_df": regime_df,
+                    "file_paths": file_paths,
                     "classifications": {k: [c.__dict__ for c in v] for k, v in classifications.items()},
                 },
                 phase="regime",
@@ -101,7 +104,7 @@ class RegimeAgent(BaseAgent):
             return AgentResult(success=False, message=str(e), halt_pipeline=True)
 
     def _classify(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[RegimeClassification]]:
-        """Classify regimes row-by-row for a single symbol."""
+        """Classify regimes row‑by‑row for a single symbol."""
         out = df.copy()
         n = len(out)
         regimes = ["unknown"] * n
@@ -135,18 +138,21 @@ class RegimeAgent(BaseAgent):
 
     def _classify_row(self, row: pd.Series, history: pd.DataFrame) -> Tuple[str, float, bool]:
         """Classify a single bar based on structural/tactical/contextual signals."""
-        # Extract available indicators
-        close = row.get("close", np.nan)
-        ema_50 = row.get("ema_50", np.nan)
-        ema_100 = row.get("ema_100", np.nan)
-        ema_200 = row.get("ema_200", np.nan)
-        ema_7 = row.get("ema_7", np.nan)
-        ema_21 = row.get("ema_21", np.nan)
-        ema_34 = row.get("ema_34", np.nan)
-        rsi = row.get("rsi_14", 50.0)
-        dist_high = row.get("dist_to_yearly_high", np.nan)
-        dist_low = row.get("dist_to_yearly_low", np.nan)
-        position_range = row.get("position_in_yearly_range", 0.5)
+        def safe_get(col, default=np.nan):
+            val = row.get(col, default)
+            return val if pd.notna(val) else default
+
+        close = safe_get("close")
+        ema_50 = safe_get("ema_50")
+        ema_100 = safe_get("ema_100")
+        ema_200 = safe_get("ema_200")
+        ema_7 = safe_get("ema_7")
+        ema_21 = safe_get("ema_21")
+        ema_34 = safe_get("ema_34")
+        rsi = safe_get("rsi_14", 50.0)
+        dist_high = safe_get("dist_to_yearly_high")
+        dist_low = safe_get("dist_to_yearly_low")
+        position_range = safe_get("position_in_yearly_range", 0.5)
 
         # Structural trend score (-1 to +1)
         structural_trend = 0.0
@@ -176,7 +182,7 @@ class RegimeAgent(BaseAgent):
             t_votes += 1
         tactical_momentum = tactical_momentum / max(t_votes, 1) if t_votes > 0 else 0.0
 
-        # ADX proxy (use trend strength if available, else infer)
+        # ADX proxy
         adx_proxy = abs(structural_trend) * 50 + abs(tactical_momentum) * 25
         adx_proxy = min(adx_proxy, 60.0)
 
@@ -209,9 +215,10 @@ class RegimeAgent(BaseAgent):
         # Transition flag: if recent history shows regime change
         transition = False
         if len(history) >= 3:
-            recent = history["regime"].iloc[-3:] if "regime" in history.columns else []
-            if len(recent) >= 2 and len(set(recent.iloc[-2:])) > 1:
-                transition = True
+            if "regime" in history.columns:
+                recent = history["regime"].iloc[-3:]
+                if len(recent) >= 2 and len(set(recent.iloc[-2:])) > 1:
+                    transition = True
 
         confidence = min(confidence, 0.95)
         return regime, confidence, transition
@@ -219,8 +226,8 @@ class RegimeAgent(BaseAgent):
     def _compute_regime_durations(self, regimes: List[str]) -> List[int]:
         durations = [1] * len(regimes)
         for i in range(1, len(regimes)):
-            if regimes[i] == regimes[i - 1]:
-                durations[i] = durations[i - 1] + 1
+            if regimes[i] == regimes[i-1]:
+                durations[i] = durations[i-1] + 1
             else:
                 durations[i] = 1
         return durations

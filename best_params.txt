@@ -1,0 +1,4 @@
+trend_threshold=0.002
+volatility_mult=1.5
+min_confidence=0.4
+rsi_upper=70

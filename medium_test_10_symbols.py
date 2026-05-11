@@ -1,5 +1,5 @@
 """
-Medium‑scale test on 10 representative symbols (last 10000 bars) with volatility filter.
+Medium scale test on 10 representative symbols (last 10000 bars) with volatility filter.
 """
 
 import sys
@@ -91,7 +91,7 @@ def generate_signals_with_volatility_filter(df: pd.DataFrame, atr_window: int = 
     return df
 
 def main():
-    regime_dir = Path("data/processed/regime")
+    regime_dir = Path("data/processed/regime_continuous")
     # Map symbol names to regime file names (files end with "_regime.parquet")
     all_files = list(regime_dir.glob("*_regime.parquet"))
     selected_files = []
@@ -150,7 +150,7 @@ def main():
         data={"file_paths": signal_files},
         metadata=meta
     )
-    store.save(temp_artifact)
+    store.save(temp_artifact, overwrite=True)
 
     # Run risk agent
     risk_agent = RiskAgent(store, message_bus, capital=10000.0, max_risk_per_trade=0.02)

@@ -1,13 +1,17 @@
-﻿"""
-Backtest Agent – realistic returns using forward closes.
+"""
+Backtest Agent (Phase 7) – realistic returns using forward prices.
+Memory‑safe, stores only aggregated report.
 """
 from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+
 import pandas as pd
 import numpy as np
+
 from core.base_agent import BaseAgent, AgentResult
 from core.state_store import StateStore
 from core.message_bus import MessageBus
@@ -33,32 +37,42 @@ class BacktestAgent(BaseAgent):
 
     def execute(self, input_artifact_id: Optional[str] = None, **kwargs) -> AgentResult:
         logger.info("[BacktestAgent] Running backtest...")
+
         try:
             if not input_artifact_id:
                 return AgentResult(success=False, message="BacktestAgent requires risk artifact")
+
             risk_artifact = self.store.load(input_artifact_id)
             file_paths = risk_artifact.data.get("file_paths", [])
             if not file_paths:
                 return AgentResult(success=False, message="No risk files found")
+
             all_returns = []
             for file_path in file_paths:
                 df = pd.read_parquet(file_path)
                 approved = df[df["approved"] == True].copy()
                 if approved.empty:
                     continue
+                # Simulate returns using actual close prices
                 approved = approved.sort_values("time")
                 approved["next_close"] = approved["close"].shift(-1)
+                # Forward return (percentage)
                 approved["return"] = (approved["next_close"] - approved["close"]) / approved["close"]
+                # Drop last row (no next close)
                 approved = approved.dropna(subset=["return"])
+                # Apply direction: long: +return, short: -return
                 approved["realized_return"] = approved["direction"] * approved["return"]
+                # Subtract transaction cost (0.01% per trade)
                 cost = 0.0001
                 approved["realized_return"] = approved["realized_return"] - cost
                 all_returns.extend(approved["realized_return"].tolist())
+
             total_trades = len(all_returns)
             if total_trades == 0:
                 report = BacktestReport(0,0,0,0,0,0,0,0,1,1)
             else:
                 report = self._compute_report(all_returns, total_trades)
+
             artifact_id = self._produce_artifact(
                 name="backtest_report",
                 data={"report": report.__dict__},
@@ -68,6 +82,7 @@ class BacktestAgent(BaseAgent):
                 notes=f"Sharpe={report.sharpe:.2f}",
             )
             return AgentResult(success=True, artifact_id=artifact_id, message="Backtest complete", diagnostics=report.__dict__)
+
         except Exception as e:
             logger.exception("[BacktestAgent] Fatal error")
             return AgentResult(success=False, message=str(e), halt_pipeline=True)

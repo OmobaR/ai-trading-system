@@ -1,5 +1,5 @@
 """
-Regime Agent – outputs continuous trend strength instead of discrete regimes.
+Regime Agent – now outputs continuous trend strength.
 Memory‑safe, per‑symbol file‑based.
 """
 from __future__ import annotations
